@@ -10,7 +10,6 @@ import {
   UsersRound,
   Lock,
   UserPlus,
-  CheckCircle2,
   Clock,
   Loader2,
   Eye,
@@ -244,8 +243,29 @@ export default function BrowseTrips() {
           const maxMembers =
             Number(trip.max_members) || 2;
 
-          const currentMembers =
+          /*
+           * IMPORTANT:
+           * Trip creator is also a traveler.
+           *
+           * trip_members contains only joined/requested
+           * users, so creator must be counted separately.
+           */
+          const acceptedMembers =
             tripMemberCounts[trip.id] || 0;
+
+          const creatorIsAlsoMember =
+            (tripMemberCounts[trip.id] || 0) > 0;
+
+          /*
+           * We don't know from count alone whether creator
+           * exists in trip_members, so normally creator is
+           * counted separately.
+           *
+           * For the current TravelMate structure, creator
+           * should NOT need a trip_members row.
+           */
+          const currentMembers =
+            acceptedMembers + 1;
 
           const vacancies = Math.max(
             maxMembers - currentMembers,
@@ -254,6 +274,13 @@ export default function BrowseTrips() {
 
           const userStatus =
             currentUserTripStatus[trip.id] || null;
+
+          const isFull =
+            currentMembers >= maxMembers;
+
+          const isConfirmed =
+            isFull ||
+            trip.status === 'confirmed';
 
           return {
             ...trip,
@@ -267,7 +294,8 @@ export default function BrowseTrips() {
             maxMembers,
             vacancies,
 
-            isFull: vacancies <= 0,
+            isFull,
+            isConfirmed,
 
             userStatus,
 
@@ -279,6 +307,8 @@ export default function BrowseTrips() {
 
             isRejected:
               userStatus === 'rejected',
+
+            creatorIsAlsoMember,
           };
         }
       );
@@ -319,7 +349,8 @@ export default function BrowseTrips() {
             maxMembers,
             vacancies,
 
-            isFull: vacancies <= 0,
+            isFull:
+              vacancies <= 0,
 
             isMember:
               !!currentUserGroupMembership[group.id],
@@ -373,7 +404,6 @@ export default function BrowseTrips() {
       } else {
         setSavedTripIds(new Set());
       }
-
     } catch (error: any) {
       console.error(
         'Error fetching trips:',
@@ -386,7 +416,6 @@ export default function BrowseTrips() {
       );
 
       setTrips([]);
-
     } finally {
       setLoading(false);
     }
@@ -425,7 +454,6 @@ export default function BrowseTrips() {
           next.delete(tripId);
           return next;
         });
-
       } else {
         const { error } =
           await supabase
@@ -445,7 +473,6 @@ export default function BrowseTrips() {
           return next;
         });
       }
-
     } catch (error) {
       console.error(
         'Error toggling save:',
@@ -489,16 +516,18 @@ export default function BrowseTrips() {
       setRequestingTripId(trip.id);
       setErrorMessage('');
 
-      // ---------------------------------------------
-      // RE-CHECK LIVE CAPACITY
-      // ---------------------------------------------
+      // =================================================
+      // LIVE TRIP DATA
+      // =================================================
 
       const {
         data: tripData,
         error: tripError,
       } = await supabase
         .from('trips')
-        .select('max_members, user_id, destination')
+        .select(
+          'max_members, user_id, destination, status'
+        )
         .eq('id', trip.id)
         .single();
 
@@ -508,6 +537,10 @@ export default function BrowseTrips() {
 
       const maxMembers =
         Number(tripData?.max_members) || 2;
+
+      // =================================================
+      // LIVE ACCEPTED MEMBER COUNT
+      // =================================================
 
       const {
         count,
@@ -525,9 +558,24 @@ export default function BrowseTrips() {
         throw countError;
       }
 
-      const latestCount = count || 0;
+      const acceptedMembers =
+        count || 0;
 
-      if (latestCount >= maxMembers) {
+      /*
+       * IMPORTANT:
+       * Creator occupies one traveler slot.
+       */
+      const latestTotalMembers =
+        acceptedMembers + 1;
+
+      // =================================================
+      // CHECK FULL / CONFIRMED
+      // =================================================
+
+      if (
+        latestTotalMembers >= maxMembers ||
+        tripData?.status === 'confirmed'
+      ) {
         alert(
           'This trip is now full. No more members can join.'
         );
@@ -536,9 +584,9 @@ export default function BrowseTrips() {
         return;
       }
 
-      // ---------------------------------------------
+      // =================================================
       // CHECK EXISTING REQUEST
-      // ---------------------------------------------
+      // =================================================
 
       const {
         data: existingMember,
@@ -555,7 +603,6 @@ export default function BrowseTrips() {
       }
 
       if (existingMember) {
-
         if (
           existingMember.status ===
           'accepted'
@@ -571,6 +618,7 @@ export default function BrowseTrips() {
           alert(
             'Your request has already been sent.'
           );
+
           await fetchData();
           return;
         }
@@ -600,9 +648,9 @@ export default function BrowseTrips() {
         }
       }
 
-      // ---------------------------------------------
+      // =================================================
       // INSERT NEW REQUEST
-      // ---------------------------------------------
+      // =================================================
 
       const {
         error: insertError,
@@ -618,9 +666,9 @@ export default function BrowseTrips() {
         throw insertError;
       }
 
-      // ---------------------------------------------
+      // =================================================
       // CHAT NOTIFICATION
-      // ---------------------------------------------
+      // =================================================
 
       const destination =
         tripData?.destination ||
@@ -648,7 +696,6 @@ export default function BrowseTrips() {
       }
 
       await fetchData();
-
     } catch (error: any) {
       console.error(
         'Request to join error:',
@@ -659,7 +706,6 @@ export default function BrowseTrips() {
         error?.message ||
           'Unable to send join request.'
       );
-
     } finally {
       setRequestingTripId(null);
     }
@@ -683,6 +729,16 @@ export default function BrowseTrips() {
     tripId: string
   ) => {
     navigate(`/trip/${tripId}`);
+  };
+
+  // =====================================================
+  // OPEN BUDGET SPLIT
+  // =====================================================
+
+  const handleBudgetSplit = (
+    tripId: string
+  ) => {
+    navigate(`/budget/${tripId}`);
   };
 
   // =====================================================
@@ -812,6 +868,13 @@ export default function BrowseTrips() {
             trip.isFull ||
             vacancies <= 0;
 
+          const isConfirmed =
+            !isGroup &&
+            (
+              trip.isConfirmed ||
+              trip.status === 'confirmed'
+            );
+
           const userStatus =
             trip.userStatus;
 
@@ -825,7 +888,7 @@ export default function BrowseTrips() {
 
               <div className="p-5 flex-1">
 
-                {/* TYPE + FULL BADGE */}
+                {/* TYPE + STATUS */}
 
                 <div className="flex items-center justify-between mb-3">
 
@@ -847,7 +910,15 @@ export default function BrowseTrips() {
                     </span>
                   )}
 
-                  {isFull && (
+                  {isConfirmed ? (
+                    <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-100">
+
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-600" />
+
+                      CONFIRMED
+
+                    </span>
+                  ) : isFull ? (
                     <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold bg-red-50 text-red-600 border border-red-100">
 
                       <Lock className="w-3 h-3" />
@@ -855,7 +926,7 @@ export default function BrowseTrips() {
                       FULL
 
                     </span>
-                  )}
+                  ) : null}
 
                 </div>
 
@@ -896,6 +967,7 @@ export default function BrowseTrips() {
                           : 'Save trip'
                       }
                     >
+
                       <Heart
                         className={`w-5 h-5 ${
                           savedTripIds.has(
@@ -905,6 +977,7 @@ export default function BrowseTrips() {
                             : ''
                         }`}
                       />
+
                     </button>
                   )}
 
@@ -922,16 +995,20 @@ export default function BrowseTrips() {
                     />
                   ) : (
                     <div className="w-8 h-8 rounded-full bg-emerald-100 flex items-center justify-center">
+
                       <User className="w-4 h-4 text-emerald-600" />
+
                     </div>
                   )}
 
                   <span>
+
                     Posted by{' '}
 
                     <span className="font-medium text-stone-700">
                       {creatorName}
                     </span>
+
                   </span>
 
                 </div>
@@ -1011,22 +1088,39 @@ export default function BrowseTrips() {
                   {!isFull && (
                     <p className="text-xs text-stone-500 mt-1">
 
-                      {isGroup
-                        ? `${vacancies} ${
-                            vacancies === 1
-                              ? 'person'
-                              : 'people'
-                          } can still join this group`
-                        : `Looking for ${vacancies} ${
-                            vacancies === 1
-                              ? 'buddy'
-                              : 'buddies'
-                          }`}
+                      Looking for{' '}
+
+                      {vacancies}{' '}
+
+                      {vacancies === 1
+                        ? 'buddy'
+                        : 'buddies'}
 
                     </p>
                   )}
 
                 </div>
+
+                {/* CONFIRMED BUDGET SPLIT */}
+
+                {isConfirmed && (
+                  <button
+                    onClick={() =>
+                      handleBudgetSplit(
+                        trip.id
+                      )
+                    }
+                    className="w-full mb-4 flex items-center justify-center gap-2 px-4 py-3 rounded-lg bg-emerald-700 text-white font-semibold hover:bg-emerald-800 transition-colors"
+                  >
+
+                    <span className="text-lg">
+                      ₹
+                    </span>
+
+                    Budget Split
+
+                  </button>
+                )}
 
                 {/* DESCRIPTION */}
 
@@ -1067,63 +1161,82 @@ export default function BrowseTrips() {
 
               <div className="bg-stone-50 px-5 py-3 border-t border-stone-200">
 
-                {/* =================================================
-                    GROUP ACTION
-                ================================================= */}
+                {/* GROUP */}
 
                 {isGroup ? (
                   <>
-                    {isOwnTrip || trip.isMember ? (
+                    {isOwnTrip ||
+                    trip.isMember ? (
+
                       <button
                         onClick={() =>
-                          handleOpenGroup(trip)
+                          handleOpenGroup(
+                            trip
+                          )
                         }
                         className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-emerald-600 text-white font-medium rounded-md hover:bg-emerald-700 transition-colors"
                       >
+
                         <UsersRound className="w-4 h-4" />
+
                         View Group
+
                       </button>
+
                     ) : isFull ? (
+
                       <button
                         disabled
                         className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-stone-200 text-stone-400 font-medium rounded-md cursor-not-allowed"
                       >
+
                         <Lock className="w-4 h-4" />
+
                         Group Full
+
                       </button>
+
                     ) : (
+
                       <button
                         onClick={() =>
-                          handleOpenGroup(trip)
+                          handleOpenGroup(
+                            trip
+                          )
                         }
                         className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-emerald-600 text-white font-medium rounded-md hover:bg-emerald-700 transition-colors"
                       >
+
                         <UsersRound className="w-4 h-4" />
+
                         View Group
+
                       </button>
+
                     )}
                   </>
                 ) : (
-                  /* =================================================
-                     NORMAL BUDDY TRIP
-                  ================================================= */
+
+                  /* NORMAL TRIP */
 
                   isOwnTrip ? (
-                    <button
-                      disabled
-                      className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-stone-100 border border-stone-200 text-stone-400 font-medium rounded-md cursor-not-allowed"
-                    >
-                      <MessageCircle className="w-4 h-4" />
-                      Your Trip
-                    </button>
-                  ) : userStatus === 'accepted' ? (
 
-                    /*
-                     * JOINED TRIP
-                     *
-                     * View Trip = full itinerary
-                     * Chat = chat with creator
-                     */
+                    <button
+                      onClick={() =>
+                        handleViewTrip(
+                          trip.id
+                        )
+                      }
+                      className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-stone-100 border border-stone-200 text-stone-600 font-medium rounded-md hover:bg-stone-200 transition-colors"
+                    >
+
+                      <Eye className="w-4 h-4" />
+
+                      View Your Trip
+
+                    </button>
+
+                  ) : userStatus === 'accepted' ? (
 
                     <div className="flex gap-2">
 
@@ -1135,8 +1248,11 @@ export default function BrowseTrips() {
                         }
                         className="flex-1 flex items-center justify-center gap-2 px-3 py-2 bg-emerald-600 text-white font-medium rounded-md hover:bg-emerald-700 transition-colors"
                       >
+
                         <Eye className="w-4 h-4" />
+
                         View Trip
+
                       </button>
 
                       <button
@@ -1148,7 +1264,9 @@ export default function BrowseTrips() {
                         title="Chat with creator"
                         className="px-4 py-2 bg-white border border-emerald-200 text-emerald-700 font-medium rounded-md hover:bg-emerald-50 transition-colors"
                       >
+
                         <MessageCircle className="w-4 h-4" />
+
                       </button>
 
                     </div>
@@ -1159,8 +1277,11 @@ export default function BrowseTrips() {
                       disabled
                       className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-amber-50 border border-amber-200 text-amber-700 font-medium rounded-md cursor-default"
                     >
+
                       <Clock className="w-4 h-4" />
+
                       Request Sent
+
                     </button>
 
                   ) : isFull ? (
@@ -1169,8 +1290,11 @@ export default function BrowseTrips() {
                       disabled
                       className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-stone-200 text-stone-400 font-medium rounded-md cursor-not-allowed"
                     >
+
                       <Lock className="w-4 h-4" />
+
                       Trip Full
+
                     </button>
 
                   ) : (
@@ -1184,20 +1308,25 @@ export default function BrowseTrips() {
                       disabled={isRequesting}
                       className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-emerald-600 text-white font-medium rounded-md hover:bg-emerald-700 disabled:bg-emerald-300 disabled:cursor-not-allowed transition-colors"
                     >
+
                       {isRequesting ? (
                         <>
                           <Loader2 className="w-4 h-4 animate-spin" />
+
                           Sending Request...
                         </>
                       ) : (
                         <>
                           <UserPlus className="w-4 h-4" />
+
                           Request to Join
                         </>
                       )}
+
                     </button>
 
                   )
+
                 )}
 
               </div>
@@ -1210,6 +1339,7 @@ export default function BrowseTrips() {
 
         {trips.length === 0 &&
           !errorMessage && (
+
             <div className="col-span-full text-center py-12 bg-white rounded-xl border border-stone-200 border-dashed">
 
               <MapPin className="w-10 h-10 text-stone-300 mx-auto mb-3" />
@@ -1227,6 +1357,7 @@ export default function BrowseTrips() {
               </Link>
 
             </div>
+
           )}
 
       </div>

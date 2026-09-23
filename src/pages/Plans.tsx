@@ -860,21 +860,14 @@ export default function Plans() {
     }
 
     /*
-     * IMPORTANT:
      * buddy_limit = number of buddies
      * max_members = total people including owner
-     *
-     * 1 buddy  -> 2 total
-     * 2 buddies -> 3 total
-     * 3 buddies -> 4 total
-     * 4 buddies -> 5 total
      */
     const maxMembers =
       buddyLimit + 1;
 
     try {
       /*
-       * STEP 1:
        * CREATE TRIP
        */
       const {
@@ -885,22 +878,16 @@ export default function Plans() {
         .insert([
           {
             user_id: user.id,
-
             destination:
               newTrip.destination.trim(),
-
             start_date:
               newTrip.start_date,
-
             end_date:
               newTrip.end_date,
-
             description:
               newTrip.description.trim(),
-
             buddy_limit:
               buddyLimit,
-
             max_members:
               maxMembers,
           },
@@ -919,14 +906,7 @@ export default function Plans() {
       }
 
       /*
-       * STEP 2:
        * ADD OWNER AS ACCEPTED MEMBER
-       *
-       * This makes BrowseTrips show:
-       * 1 / 2
-       * 1 / 3
-       * 1 / 4
-       * 1 / 5
        */
       const {
         error: memberError,
@@ -936,17 +916,14 @@ export default function Plans() {
           {
             trip_id:
               createdTrip.id,
-
             user_id:
               user.id,
-
             status:
               'accepted',
           },
           {
             onConflict:
               'trip_id,user_id',
-
             ignoreDuplicates:
               true,
           }
@@ -958,11 +935,6 @@ export default function Plans() {
           memberError
         );
 
-        /*
-         * Trip itself is already created.
-         * So don't delete it or report
-         * complete publishing failure.
-         */
         setMessage(
           'Trip published, but capacity setup needs attention.'
         );
@@ -973,7 +945,6 @@ export default function Plans() {
       }
 
       /*
-       * STEP 3:
        * RESET FORM
        */
       setNewTrip({
@@ -984,16 +955,8 @@ export default function Plans() {
         buddy_limit: '1',
       });
 
-      /*
-       * STEP 4:
-       * CLOSE FORM
-       */
       setIsAdding(false);
 
-      /*
-       * STEP 5:
-       * REFRESH MY TRIPS
-       */
       await fetchTrips();
 
       setTimeout(
@@ -1015,6 +978,15 @@ export default function Plans() {
 
   /*
    * ACCEPT JOIN REQUEST
+   *
+   * IMPORTANT:
+   * Owner is already an accepted member.
+   * Therefore accepted member count includes:
+   *
+   * Owner + accepted buddies
+   *
+   * When accepted count reaches max_members,
+   * trip.status becomes "confirmed".
    */
   const handleAcceptRequest = async (
     request: any
@@ -1022,10 +994,12 @@ export default function Plans() {
     if (!user) return;
 
     setRequestLoading(request.id);
+    setMessage('');
 
     try {
       /*
-       * Get latest trip capacity
+       * STEP 1:
+       * Get latest trip information
        */
       const {
         data: latestTrip,
@@ -1033,13 +1007,19 @@ export default function Plans() {
       } = await supabase
         .from('trips')
         .select(
-          'id, max_members, buddy_limit, destination, user_id'
+          'id, max_members, buddy_limit, destination, user_id, status'
         )
         .eq('id', request.trip_id)
         .single();
 
-      if (tripError) throw tripError;
+      if (tripError) {
+        throw tripError;
+      }
 
+      /*
+       * STEP 2:
+       * Verify owner
+       */
       if (
         latestTrip.user_id !== user.id
       ) {
@@ -1048,18 +1028,29 @@ export default function Plans() {
         );
       }
 
+      const buddyLimit =
+        Number(
+          latestTrip.buddy_limit
+        ) || 1;
+
+      const maxMembers =
+        Number(
+          latestTrip.max_members
+        ) ||
+        buddyLimit + 1;
+
       /*
-       * Count accepted members
+       * STEP 3:
+       * Get current accepted members
        */
       const {
-        count,
+        data: acceptedMembers,
         error: countError,
       } = await supabase
         .from('trip_members')
-        .select('id', {
-          count: 'exact',
-          head: true,
-        })
+        .select(
+          'id, user_id'
+        )
         .eq(
           'trip_id',
           request.trip_id
@@ -1073,21 +1064,12 @@ export default function Plans() {
         throw countError;
       }
 
-      const buddyLimit =
-        Number(
-          latestTrip.buddy_limit
-        ) || 1;
-
-      const maxMembers =
-        Number(
-          latestTrip.max_members
-        ) || buddyLimit + 1;
-
       const currentMembers =
-        count || 0;
+        acceptedMembers?.length || 0;
 
       /*
-       * Don't allow accepting if full
+       * STEP 4:
+       * Check capacity before accepting
        */
       if (
         currentMembers >=
@@ -1102,9 +1084,11 @@ export default function Plans() {
       }
 
       /*
+       * STEP 5:
        * Accept request
        */
       const {
+        data: updatedRequest,
         error: updateError,
       } = await supabase
         .from('trip_members')
@@ -1123,21 +1107,111 @@ export default function Plans() {
         .eq(
           'status',
           'pending'
-        );
+        )
+        .select()
+        .maybeSingle();
 
       if (updateError) {
         throw updateError;
       }
 
-      setMessage(
-        `${request.profile?.full_name || 'Traveler'} has been accepted!`
-      );
+      /*
+       * If nothing was updated,
+       * request was already processed.
+       */
+      if (!updatedRequest) {
+        throw new Error(
+          'This join request has already been processed.'
+        );
+      }
 
+      /*
+       * STEP 6:
+       * Count accepted members AGAIN
+       * after accepting the request.
+       */
+      const {
+        count: finalAcceptedCount,
+        error: finalCountError,
+      } = await supabase
+        .from('trip_members')
+        .select(
+          'id',
+          {
+            count:
+              'exact',
+            head: true,
+          }
+        )
+        .eq(
+          'trip_id',
+          request.trip_id
+        )
+        .eq(
+          'status',
+          'accepted'
+        );
+
+      if (finalCountError) {
+        throw finalCountError;
+      }
+
+      const finalMembers =
+        finalAcceptedCount || 0;
+
+      /*
+       * STEP 7:
+       * FULL = CONFIRMED
+       */
+      if (
+        finalMembers >=
+        maxMembers
+      ) {
+        const {
+          error: confirmError,
+        } = await supabase
+          .from('trips')
+          .update({
+            status:
+              'confirmed',
+          })
+          .eq(
+            'id',
+            request.trip_id
+          )
+          .eq(
+            'user_id',
+            user.id
+          );
+
+        if (confirmError) {
+          throw confirmError;
+        }
+
+        setMessage(
+          `Trip confirmed! ${
+            request.profile?.full_name ||
+            'Traveler'
+          } has been accepted.`
+        );
+      } else {
+        setMessage(
+          `${
+            request.profile?.full_name ||
+            'Traveler'
+          } has been accepted! ${finalMembers}/${maxMembers} members joined.`
+        );
+      }
+
+      /*
+       * STEP 8:
+       * Refresh UI
+       */
       await fetchTrips();
 
       setTimeout(
         () => setMessage(''),
-        3000
+        4000
       );
     } catch (error: any) {
       console.error(
@@ -1163,6 +1237,7 @@ export default function Plans() {
     if (!user) return;
 
     setRequestLoading(request.id);
+    setMessage('');
 
     try {
       const {
@@ -1249,9 +1324,7 @@ export default function Plans() {
         3000
       );
     } catch (error: any) {
-      console.error(
-        error
-      );
+      console.error(error);
 
       setMessage(
         error?.message ||
@@ -1368,6 +1441,9 @@ export default function Plans() {
             ) ||
             message.includes(
               'accepted'
+            ) ||
+            message.includes(
+              'confirmed'
             )
               ? 'bg-emerald-50 text-emerald-700'
               : 'bg-red-50 text-red-700'
@@ -1465,9 +1541,7 @@ export default function Plans() {
 
                               <span className="flex items-center gap-1">
                                 <MapPin className="w-3.5 h-3.5" />
-                                {
-                                  trip.destination
-                                }
+                                {trip.destination}
                               </span>
 
                               <span className="flex items-center gap-1">
@@ -2000,6 +2074,16 @@ export default function Plans() {
                 ) ||
                 buddyLimit + 1;
 
+              /*
+               * Owner is inserted into
+               * trip_members during creation.
+               *
+               * For this screen, display:
+               * 1 / max_members initially.
+               *
+               * We also show CONFIRMED when
+               * trips.status is confirmed.
+               */
               return (
                 <div
                   key={trip.id}
@@ -2031,6 +2115,15 @@ export default function Plans() {
                       </button>
 
                     </div>
+
+                    {/* STATUS */}
+                    {trip.status ===
+                      'confirmed' && (
+                      <div className="mb-3 inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-emerald-100 text-emerald-700 text-sm font-semibold">
+                        <Check className="w-4 h-4" />
+                        CONFIRMED
+                      </div>
+                    )}
 
                     {/* DATE */}
                     <div className="flex items-center gap-2 text-sm text-stone-600 mb-3">
@@ -2087,16 +2180,31 @@ export default function Plans() {
 
                   <div className="bg-stone-50 px-5 py-3 border-t border-stone-200">
 
-                    <Link
-                      to="/buddies"
-                      className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-white border border-stone-300 text-stone-700 font-medium rounded-md hover:bg-stone-50"
-                    >
+                    <div className="flex flex-col gap-2">
 
-                      <Users className="w-4 h-4" />
+                      <Link
+                        to="/buddies"
+                        className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-white border border-stone-300 text-stone-700 font-medium rounded-md hover:bg-stone-50"
+                      >
 
-                      Find Buddies
+                        <Users className="w-4 h-4" />
 
-                    </Link>
+                        Find Buddies
+
+                      </Link>
+
+                      {trip.status ===
+                        'confirmed' && (
+                        <Link
+                          to={`/budget/${trip.id}`}
+                          className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-emerald-600 text-white font-medium rounded-md hover:bg-emerald-700"
+                        >
+                          <Wallet className="w-4 h-4" />
+                          Budget Split
+                        </Link>
+                      )}
+
+                    </div>
 
                   </div>
 
