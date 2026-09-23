@@ -24,6 +24,7 @@ import Chat from './pages/Chat';
 import History from './pages/History';
 import EmergencyNearby from './pages/EmergencyNearby';
 import MeetingPoint from './pages/MeetingPoint';
+import BudgetSplit from './pages/BudgetSplit';
 
 // ================= TRIP =================
 import TripHistory from './pages/TripHistory';
@@ -81,6 +82,10 @@ export default function App() {
           <Route path="/meeting-point/:tripId" 
           element={<MeetingPoint />}
            />
+
+           <Route path="/budget/:tripId" 
+           element={<BudgetSplit />}
+            />
 
 
           {/* =====================================================
