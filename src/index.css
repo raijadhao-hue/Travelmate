@@ -1,0 +1,28 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Playfair+Display:ital,wght@0,400;0,700;1,400&display=swap');
+
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-serif: "Playfair Display", serif;
+
+  /* TravelMate Brand Colors */
+  --color-brand: #FF3F6C;
+  --color-brand-dark: #E62E5C;
+  --color-brand-light: #FFF5F7;
+  --color-brand-soft: #FFE4EA;
+}
+
+body {
+  @apply bg-stone-50 text-stone-900 antialiased;
+}
+
+.glass {
+  @apply bg-white/70 backdrop-blur-md border border-white/20;
+}
+
+.card-shadow {
+  box-shadow:
+    0 4px 20px -2px rgba(255, 63, 108, 0.08),
+    0 2px 10px -2px rgba(255, 63, 108, 0.04);
+}
