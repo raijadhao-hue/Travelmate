@@ -28,6 +28,7 @@ import BudgetSplit from './pages/BudgetSplit';
 
 // ================= TRIP =================
 import TripHistory from './pages/TripHistory';
+import TripDetails from './pages/TripDetails';
 
 // ================= ACCOUNT =================
 import VerifyAccount from './pages/VerifyAccount';
@@ -75,17 +76,21 @@ export default function App() {
             path="/reset-password"
             element={<ResetPassword />}
           />
-          <Route path="/emergency-nearby"
-           element={<EmergencyNearby />} 
+
+          <Route
+            path="/emergency-nearby"
+            element={<EmergencyNearby />}
           />
 
-          <Route path="/meeting-point/:tripId" 
-          element={<MeetingPoint />}
-           />
+          <Route
+            path="/meeting-point/:tripId"
+            element={<MeetingPoint />}
+          />
 
-           <Route path="/budget/:tripId" 
-           element={<BudgetSplit />}
-            />
+          <Route
+            path="/budget/:tripId"
+            element={<BudgetSplit />}
+          />
 
 
           {/* =====================================================
@@ -109,13 +114,11 @@ export default function App() {
 
             {/* ================= PROFILE ================= */}
 
-            {/* Logged-in user's own profile */}
             <Route
               path="/profile"
               element={<Profile />}
             />
 
-            {/* Other user's public profile */}
             <Route
               path="/public-profile/:userId"
               element={<PublicProfile />}
@@ -134,6 +137,12 @@ export default function App() {
               element={<BrowseTrips />}
             />
 
+            {/* Trip Details */}
+            <Route
+              path="/trip/:tripId"
+              element={<TripDetails />}
+            />
+
             <Route
               path="/plans"
               element={<Plans />}
@@ -143,8 +152,10 @@ export default function App() {
               path="/trip-history"
               element={<TripHistory />}
             />
-            <Route path="/history" 
-            element={<History />} 
+
+            <Route
+              path="/history"
+              element={<History />}
             />
 
 
@@ -202,13 +213,11 @@ export default function App() {
 
             {/* ================= CHAT ================= */}
 
-            {/* Chat list */}
             <Route
               path="/chat"
               element={<Chat />}
             />
 
-            {/* Chat with specific user */}
             <Route
               path="/chat/:userId"
               element={<Chat />}

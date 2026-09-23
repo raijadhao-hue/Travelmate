@@ -13,6 +13,7 @@ import {
   CheckCircle2,
   Clock,
   Loader2,
+  Eye,
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { Link, useNavigate } from 'react-router-dom';
@@ -170,21 +171,15 @@ export default function BrowseTrips() {
             tripMembersError
           );
 
-          /*
-           * If trip_members table/RLS has an issue,
-           * don't silently show wrong capacity.
-           */
           throw tripMembersError;
         }
 
         (tripMembersData || []).forEach((member: any) => {
-          // Only ACCEPTED members occupy capacity
           if (member.status === 'accepted') {
             tripMemberCounts[member.trip_id] =
               (tripMemberCounts[member.trip_id] || 0) + 1;
           }
 
-          // Current user's membership/request status
           if (
             user &&
             member.user_id === user.id
@@ -223,13 +218,11 @@ export default function BrowseTrips() {
           );
         } else {
           (membersData || []).forEach((member: any) => {
-            // Only accepted members count
             if (member.status === 'accepted') {
               groupMemberCounts[member.group_id] =
                 (groupMemberCounts[member.group_id] || 0) + 1;
             }
 
-            // Current user's group membership
             if (
               user &&
               member.user_id === user.id &&
@@ -251,13 +244,6 @@ export default function BrowseTrips() {
           const maxMembers =
             Number(trip.max_members) || 2;
 
-          /*
-           * Actual accepted member count from trip_members.
-           *
-           * IMPORTANT:
-           * The creator should already exist in trip_members
-           * with status = accepted.
-           */
           const currentMembers =
             tripMemberCounts[trip.id] || 0;
 
@@ -306,10 +292,6 @@ export default function BrowseTrips() {
           const databaseMax =
             Number(group.max_members) || 5;
 
-          /*
-           * Duo = max 2
-           * Normal group = max 5
-           */
           const maxMembers =
             String(group.group_type).toLowerCase() === 'duo'
               ? 2
@@ -484,33 +466,17 @@ export default function BrowseTrips() {
       return;
     }
 
-    // -----------------------------------------------
-    // OWN TRIP
-    // -----------------------------------------------
-
     if (trip.user_id === user.id) {
       return;
     }
-
-    // -----------------------------------------------
-    // ALREADY ACCEPTED
-    // -----------------------------------------------
 
     if (trip.userStatus === 'accepted') {
       return;
     }
 
-    // -----------------------------------------------
-    // REQUEST ALREADY SENT
-    // -----------------------------------------------
-
     if (trip.userStatus === 'pending') {
       return;
     }
-
-    // -----------------------------------------------
-    // FULL CHECK
-    // -----------------------------------------------
 
     if (trip.isFull) {
       alert(
@@ -561,10 +527,6 @@ export default function BrowseTrips() {
 
       const latestCount = count || 0;
 
-      // ---------------------------------------------
-      // TRIP BECAME FULL
-      // ---------------------------------------------
-
       if (latestCount >= maxMembers) {
         alert(
           'This trip is now full. No more members can join.'
@@ -592,10 +554,6 @@ export default function BrowseTrips() {
         throw existingError;
       }
 
-      // ---------------------------------------------
-      // EXISTING REQUEST
-      // ---------------------------------------------
-
       if (existingMember) {
 
         if (
@@ -617,10 +575,6 @@ export default function BrowseTrips() {
           return;
         }
 
-        /*
-         * If previously rejected,
-         * change rejected → pending.
-         */
         if (
           existingMember.status ===
           'rejected'
@@ -665,13 +619,8 @@ export default function BrowseTrips() {
       }
 
       // ---------------------------------------------
-      // OPTIONAL CHAT NOTIFICATION
+      // CHAT NOTIFICATION
       // ---------------------------------------------
-      /*
-       * We keep chat functionality.
-       * Sending this message lets the trip owner
-       * know that someone requested to join.
-       */
 
       const destination =
         tripData?.destination ||
@@ -691,10 +640,6 @@ export default function BrowseTrips() {
           message: requestMessage,
         });
 
-      /*
-       * If message fails, the join request is still
-       * successfully created. So don't fail the request.
-       */
       if (messageError) {
         console.warn(
           'Request notification message failed:',
@@ -731,6 +676,16 @@ export default function BrowseTrips() {
   };
 
   // =====================================================
+  // OPEN NORMAL TRIP
+  // =====================================================
+
+  const handleViewTrip = (
+    tripId: string
+  ) => {
+    navigate(`/trip/${tripId}`);
+  };
+
+  // =====================================================
   // DATE FORMAT
   // =====================================================
 
@@ -742,7 +697,7 @@ export default function BrowseTrips() {
     }
 
     return new Date(
-      date
+      `${date}T00:00:00`
     ).toLocaleDateString(
       'en-IN',
       {
@@ -919,8 +874,6 @@ export default function BrowseTrips() {
 
                   </h3>
 
-                  {/* SAVE NORMAL TRIPS ONLY */}
-
                   {!isGroup && (
                     <button
                       onClick={() =>
@@ -969,9 +922,7 @@ export default function BrowseTrips() {
                     />
                   ) : (
                     <div className="w-8 h-8 rounded-full bg-emerald-100 flex items-center justify-center">
-
                       <User className="w-4 h-4 text-emerald-600" />
-
                     </div>
                   )}
 
@@ -1124,7 +1075,9 @@ export default function BrowseTrips() {
                   <>
                     {isOwnTrip || trip.isMember ? (
                       <button
-                        onClick={() => handleOpenGroup(trip)}
+                        onClick={() =>
+                          handleOpenGroup(trip)
+                        }
                         className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-emerald-600 text-white font-medium rounded-md hover:bg-emerald-700 transition-colors"
                       >
                         <UsersRound className="w-4 h-4" />
@@ -1140,7 +1093,9 @@ export default function BrowseTrips() {
                       </button>
                     ) : (
                       <button
-                        onClick={() => handleOpenGroup(trip)}
+                        onClick={() =>
+                          handleOpenGroup(trip)
+                        }
                         className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-emerald-600 text-white font-medium rounded-md hover:bg-emerald-700 transition-colors"
                       >
                         <UsersRound className="w-4 h-4" />
@@ -1152,6 +1107,7 @@ export default function BrowseTrips() {
                   /* =================================================
                      NORMAL BUDDY TRIP
                   ================================================= */
+
                   isOwnTrip ? (
                     <button
                       disabled
@@ -1161,14 +1117,44 @@ export default function BrowseTrips() {
                       Your Trip
                     </button>
                   ) : userStatus === 'accepted' ? (
-                    <button
-                      onClick={() => navigate(`/chat/${trip.user_id}`)}
-                      className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-emerald-600 text-white font-medium rounded-md hover:bg-emerald-700 transition-colors"
-                    >
-                      <CheckCircle2 className="w-4 h-4" />
-                      Joined • Chat
-                    </button>
+
+                    /*
+                     * JOINED TRIP
+                     *
+                     * View Trip = full itinerary
+                     * Chat = chat with creator
+                     */
+
+                    <div className="flex gap-2">
+
+                      <button
+                        onClick={() =>
+                          handleViewTrip(
+                            trip.id
+                          )
+                        }
+                        className="flex-1 flex items-center justify-center gap-2 px-3 py-2 bg-emerald-600 text-white font-medium rounded-md hover:bg-emerald-700 transition-colors"
+                      >
+                        <Eye className="w-4 h-4" />
+                        View Trip
+                      </button>
+
+                      <button
+                        onClick={() =>
+                          navigate(
+                            `/chat/${trip.user_id}`
+                          )
+                        }
+                        title="Chat with creator"
+                        className="px-4 py-2 bg-white border border-emerald-200 text-emerald-700 font-medium rounded-md hover:bg-emerald-50 transition-colors"
+                      >
+                        <MessageCircle className="w-4 h-4" />
+                      </button>
+
+                    </div>
+
                   ) : userStatus === 'pending' ? (
+
                     <button
                       disabled
                       className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-amber-50 border border-amber-200 text-amber-700 font-medium rounded-md cursor-default"
@@ -1176,7 +1162,9 @@ export default function BrowseTrips() {
                       <Clock className="w-4 h-4" />
                       Request Sent
                     </button>
+
                   ) : isFull ? (
+
                     <button
                       disabled
                       className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-stone-200 text-stone-400 font-medium rounded-md cursor-not-allowed"
@@ -1184,9 +1172,15 @@ export default function BrowseTrips() {
                       <Lock className="w-4 h-4" />
                       Trip Full
                     </button>
+
                   ) : (
+
                     <button
-                      onClick={() => handleRequestToJoin(trip)}
+                      onClick={() =>
+                        handleRequestToJoin(
+                          trip
+                        )
+                      }
                       disabled={isRequesting}
                       className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-emerald-600 text-white font-medium rounded-md hover:bg-emerald-700 disabled:bg-emerald-300 disabled:cursor-not-allowed transition-colors"
                     >
@@ -1202,6 +1196,7 @@ export default function BrowseTrips() {
                         </>
                       )}
                     </button>
+
                   )
                 )}
 
