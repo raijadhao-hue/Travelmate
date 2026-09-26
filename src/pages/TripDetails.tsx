@@ -277,15 +277,53 @@ export default function TripDetails() {
    * Plans.tsx inserts the trip owner into trip_members
    * with status = accepted.
    *
-   * So members.length already represents:
+   * So members.length normally represents:
    * owner + accepted buddies.
+   *
+   * HOWEVER:
+   * History can contain trips whose end_date is already in
+   * the past. A completed trip must NEVER show:
+   * - OPEN
+   * - Waiting for members
+   * - spots remaining
+   * - Join/waiting status
+   *
+   * Completed status is therefore based on the trip dates
+   * and takes priority over the database status/capacity.
    */
   const currentMembers = members.length;
 
+  const getLocalDateString = (value?: string | null) => {
+    if (!value) return '';
+
+    const clean = String(value).slice(0, 10);
+
+    return clean;
+  };
+
+  const todayString = (() => {
+    const now = new Date();
+
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const day = String(now.getDate()).padStart(2, '0');
+
+    return `${year}-${month}-${day}`;
+  })();
+
+  const tripEndDate = getLocalDateString(trip.end_date);
+
+  // A trip is completed once its end date has passed.
+  const isCompleted =
+    !!tripEndDate && tripEndDate < todayString;
+
   const isFull = currentMembers >= maxMembers;
 
+  // Completed trips are not OPEN/CONFIRMED-for-booking.
+  // Their completed state takes priority.
   const isConfirmed =
-    trip.status === 'confirmed' || isFull;
+    !isCompleted &&
+    (trip.status === 'confirmed' || isFull);
 
   const plan = getTripPlan();
 
@@ -341,20 +379,26 @@ export default function TripDetails() {
 
                 <span className="flex items-center gap-2">
                   <Users className="w-5 h-5 text-emerald-600" />
-                  {currentMembers}/{maxMembers} travelers
+                  {isCompleted
+                    ? 'Trip completed'
+                    : `${currentMembers}/${maxMembers} travelers`}
                 </span>
               </div>
             </div>
 
             <div
               className={`inline-flex items-center gap-2 px-4 py-2 rounded-full font-semibold ${
-                isConfirmed
+                isCompleted || isConfirmed
                   ? 'bg-emerald-100 text-emerald-700'
                   : 'bg-amber-100 text-amber-700'
               }`}
             >
               <CheckCircle2 className="w-5 h-5" />
-              {isConfirmed ? 'CONFIRMED' : 'OPEN'}
+              {isCompleted
+                ? 'COMPLETED'
+                : isConfirmed
+                  ? 'CONFIRMED'
+                  : 'OPEN'}
             </div>
           </div>
         </div>
@@ -415,18 +459,32 @@ export default function TripDetails() {
                   <div className="flex items-center gap-2 text-emerald-600 mb-2">
                     <Users className="w-5 h-5" />
                     <span className="text-sm font-medium">
-                      Capacity
+                      {isCompleted ? 'Trip Status' : 'Capacity'}
                     </span>
                   </div>
 
-                  <p className="font-semibold text-stone-900">
-                    {currentMembers} / {maxMembers}
-                  </p>
+                  {isCompleted ? (
+                    <>
+                      <p className="font-semibold text-emerald-700">
+                        Trip Completed
+                      </p>
 
-                  <p className="text-sm text-stone-600">
-                    {Math.max(maxMembers - currentMembers, 0)} spots
-                    remaining
-                  </p>
+                      <p className="text-sm text-stone-600">
+                        This trip has already ended.
+                      </p>
+                    </>
+                  ) : (
+                    <>
+                      <p className="font-semibold text-stone-900">
+                        {currentMembers} / {maxMembers}
+                      </p>
+
+                      <p className="text-sm text-stone-600">
+                        {Math.max(maxMembers - currentMembers, 0)} spots
+                        remaining
+                      </p>
+                    </>
+                  )}
                 </div>
 
                 <div className="p-4 rounded-xl bg-stone-50">
@@ -439,12 +497,16 @@ export default function TripDetails() {
 
                   <p
                     className={`font-semibold ${
-                      isConfirmed
+                      isCompleted || isConfirmed
                         ? 'text-emerald-700'
                         : 'text-amber-700'
                     }`}
                   >
-                    {isConfirmed ? 'Confirmed' : 'Waiting for members'}
+                    {isCompleted
+                      ? 'Trip Completed'
+                      : isConfirmed
+                        ? 'Confirmed'
+                        : 'Waiting for members'}
                   </p>
                 </div>
 
@@ -631,14 +693,16 @@ export default function TripDetails() {
                   </h2>
 
                   <p className="text-sm text-stone-500 mt-1">
-                    {currentMembers} / {maxMembers} travelers
+                    {isCompleted
+                      ? 'This trip has already ended'
+                      : `${currentMembers} / ${maxMembers} travelers`}
                   </p>
                 </div>
 
-                {isConfirmed && (
+                {(isCompleted || isConfirmed) && (
                   <span className="text-sm font-semibold text-emerald-700 flex items-center gap-1">
                     <CheckCircle2 className="w-4 h-4" />
-                    Full
+                    {isCompleted ? 'Completed' : 'Full'}
                   </span>
                 )}
               </div>
@@ -763,7 +827,7 @@ export default function TripDetails() {
             {/* STATUS / BUDGET SPLIT */}
             <section
               className={`rounded-2xl border p-6 shadow-sm ${
-                isConfirmed
+                isCompleted || isConfirmed
                   ? 'bg-emerald-50 border-emerald-200'
                   : 'bg-white border-stone-200'
               }`}
@@ -771,12 +835,12 @@ export default function TripDetails() {
               <div className="flex items-center gap-3 mb-4">
                 <div
                   className={`w-11 h-11 rounded-full flex items-center justify-center ${
-                    isConfirmed
+                    isCompleted || isConfirmed
                       ? 'bg-emerald-100'
                       : 'bg-stone-100'
                   }`}
                 >
-                  {isConfirmed ? (
+                  {isCompleted || isConfirmed ? (
                     <CheckCircle2 className="w-6 h-6 text-emerald-700" />
                   ) : (
                     <Users className="w-6 h-6 text-stone-600" />
@@ -786,23 +850,33 @@ export default function TripDetails() {
                 <div>
                   <p
                     className={`font-bold ${
-                      isConfirmed
+                      isCompleted || isConfirmed
                         ? 'text-emerald-800'
                         : 'text-stone-900'
                     }`}
                   >
-                    {isConfirmed
-                      ? 'Trip Confirmed'
-                      : 'Waiting for Members'}
+                    {isCompleted
+                      ? 'Trip Completed'
+                      : isConfirmed
+                        ? 'Trip Confirmed'
+                        : 'Waiting for Members'}
                   </p>
 
                   <p className="text-sm text-stone-600">
-                    {currentMembers}/{maxMembers} travelers
+                    {isCompleted
+                      ? `Ended on ${formatDate(trip.end_date)}`
+                      : `${currentMembers}/${maxMembers} travelers`}
                   </p>
                 </div>
               </div>
 
-              {!isConfirmed ? (
+              {isCompleted ? (
+                <p className="text-sm text-emerald-800 leading-6">
+                  This trip has already ended. It is shown here as part
+                  of your travel history and is no longer accepting
+                  members.
+                </p>
+              ) : !isConfirmed ? (
                 <p className="text-sm text-stone-600 leading-6">
                   {Math.max(maxMembers - currentMembers, 0)} more{' '}
                   {maxMembers - currentMembers === 1
