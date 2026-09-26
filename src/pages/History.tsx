@@ -44,7 +44,6 @@ export default function History() {
   const [searched, setSearched] = useState(false);
   const [error, setError] = useState('');
 
-  // Dropdown value -> database destination prefix
   const destinationMap: Record<string, string> = {
     Goa: 'Goa',
     Rajasthan: 'Rajasthan',
@@ -121,11 +120,26 @@ export default function History() {
       return null;
     }
 
-    return (
-      profile.avatar_url ||
-      profile.profile_photo_url ||
-      null
-    );
+    return profile.avatar_url || profile.profile_photo_url || null;
+  };
+
+  // =====================================================
+  // DATE HELPERS
+  // =====================================================
+
+  const addDaysToDate = (
+    dateString: string,
+    days: number
+  ) => {
+    const date = new Date(`${dateString}T00:00:00`);
+
+    date.setDate(date.getDate() + days);
+
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+
+    return `${year}-${month}-${day}`;
   };
 
   // =====================================================
@@ -144,13 +158,13 @@ export default function History() {
     }
 
     if (!selectedDate) {
-      setError('Please select a trip start date.');
+      setError('Please select a trip date.');
       return;
     }
 
     const today = getTodayString();
 
-    // Only past dates
+    // Selected date must be in the past
     if (selectedDate >= today) {
       setError(
         'Please select a past date to view completed trip history.'
@@ -161,36 +175,28 @@ export default function History() {
     try {
       setLoading(true);
 
-      // =====================================================
-      // DATABASE DESTINATION
-      // Example:
-      // Goa -> Goa
-      // Rajasthan -> Rajasthan
-      // Himachal Pradesh -> Himachal
-      // =====================================================
-
       const databaseDestination =
         destinationMap[destination] || destination;
 
       // =====================================================
-      // NEXT DATE
-      // Used so timestamp/date values both work
+      // SEARCH WINDOW
+      //
+      // Selected date ke around 7 days before + 7 days after
+      //
+      // Example:
+      // Selected: 15 Sep
+      // Search:   08 Sep -> 22 Sep
       // =====================================================
 
-      const selectedStart = new Date(
-        `${selectedDate}T00:00:00`
+      const searchStartDate = addDaysToDate(
+        selectedDate,
+        -7
       );
 
-      const nextDate = new Date(selectedStart);
-
-      nextDate.setDate(nextDate.getDate() + 1);
-
-      const nextDateString =
-        `${nextDate.getFullYear()}-${String(
-          nextDate.getMonth() + 1
-        ).padStart(2, '0')}-${String(
-          nextDate.getDate()
-        ).padStart(2, '0')}`;
+      const searchEndDate = addDaysToDate(
+        selectedDate,
+        7
+      );
 
       // =====================================================
       // NORMAL TRIPS
@@ -210,21 +216,20 @@ export default function History() {
           description,
           max_members
         `)
-        // Goa matches Goa, India
         .ilike(
           'destination',
           `${databaseDestination.trim()}%`
         )
-        // Exact selected START DATE
+        // Trip START should be around selected date
         .gte(
           'start_date',
-          selectedDate
+          searchStartDate
         )
-        .lt(
+        .lte(
           'start_date',
-          nextDateString
+          searchEndDate
         )
-        // Trip must be completed
+        // Trip must already be completed
         .lt(
           'end_date',
           today
@@ -288,14 +293,16 @@ export default function History() {
           'destination',
           `${databaseDestination.trim()}%`
         )
+        // Group START should be around selected date
         .gte(
           'start_date',
-          selectedDate
+          searchStartDate
         )
-        .lt(
+        .lte(
           'start_date',
-          nextDateString
+          searchEndDate
         )
+        // Group must already be completed
         .lt(
           'end_date',
           today
@@ -345,8 +352,8 @@ export default function History() {
         ...normalHistory,
         ...groupHistory,
       ].sort((a, b) =>
-        a.start_date.localeCompare(
-          b.start_date
+        b.start_date.localeCompare(
+          a.start_date
         )
       );
 
@@ -476,14 +483,13 @@ export default function History() {
               </h1>
 
               <p className="text-sm text-stone-500">
-                Find completed trips by destination and start date
+                Find completed trips around your selected date
               </p>
             </div>
 
           </div>
         </div>
       </header>
-
 
       {/* MAIN */}
 
@@ -498,7 +504,7 @@ export default function History() {
           </h2>
 
           <p className="mt-1 text-sm text-stone-500">
-            Select the destination and exact trip start date.
+            Select a destination and date to find completed trips around that date.
           </p>
 
           <div className="mt-6 grid gap-5 md:grid-cols-2">
@@ -549,13 +555,12 @@ export default function History() {
 
             </div>
 
-
             {/* DATE */}
 
             <div>
 
               <label className="mb-2 block text-sm font-medium text-stone-700">
-                Trip Start Date
+                Trip Date
               </label>
 
               <div className="relative">
@@ -579,10 +584,13 @@ export default function History() {
 
               </div>
 
+              <p className="mt-2 text-xs text-stone-400">
+                Trips from 7 days before to 7 days after this date will be shown.
+              </p>
+
             </div>
 
           </div>
-
 
           {/* ERROR */}
 
@@ -591,7 +599,6 @@ export default function History() {
               {error}
             </div>
           )}
-
 
           {/* BUTTONS */}
 
@@ -618,7 +625,6 @@ export default function History() {
 
             </button>
 
-
             {searched && (
               <button
                 onClick={clearSearch}
@@ -631,7 +637,6 @@ export default function History() {
           </div>
 
         </div>
-
 
         {/* RESULTS */}
 
@@ -650,7 +655,7 @@ export default function History() {
                 {destination &&
                   selectedDate && (
                     <p className="mt-1 text-sm text-stone-500">
-                      {destination} •{' '}
+                      {destination} • around{' '}
                       {formatDate(
                         selectedDate
                       )}
@@ -669,7 +674,6 @@ export default function History() {
               )}
 
             </div>
-
 
             {/* NO RESULTS */}
 
@@ -691,7 +695,7 @@ export default function History() {
                 </h3>
 
                 <p className="mx-auto mt-2 max-w-md text-sm text-stone-500">
-                  No completed trip was found for this destination and exact start date.
+                  No completed trip was found for this destination within 7 days before or after the selected date.
                 </p>
 
               </div>
@@ -756,7 +760,6 @@ export default function History() {
 
                           </div>
 
-
                           {/* DETAILS */}
 
                           <div className="min-w-0 flex-1">
@@ -790,7 +793,6 @@ export default function History() {
 
                               </div>
 
-
                               <span className="flex items-center gap-1.5 rounded-full bg-emerald-100 px-3 py-1.5 text-xs font-semibold text-emerald-700">
 
                                 <CheckCircle2
@@ -802,7 +804,6 @@ export default function History() {
                               </span>
 
                             </div>
-
 
                             {/* TRIP INFO */}
 
@@ -820,7 +821,6 @@ export default function History() {
                                 </span>
 
                               </div>
-
 
                               <div className="flex items-center gap-2">
 
@@ -840,7 +840,6 @@ export default function History() {
                                 </span>
 
                               </div>
-
 
                               <div className="flex items-center gap-2">
 
@@ -873,7 +872,6 @@ export default function History() {
 
                             </div>
 
-
                             {/* DESCRIPTION */}
 
                             {trip.description && (
@@ -881,7 +879,6 @@ export default function History() {
                                 {trip.description}
                               </p>
                             )}
-
 
                             {/* VIEW PROFILE */}
 
