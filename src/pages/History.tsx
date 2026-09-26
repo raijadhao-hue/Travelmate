@@ -38,7 +38,8 @@ export default function History() {
   const [selectedDate, setSelectedDate] = useState('');
 
   const [trips, setTrips] = useState<HistoryTrip[]>([]);
-  const [profiles, setProfiles] = useState<Record<string, Profile>>({});
+  const [profiles, setProfiles] =
+    useState<Record<string, Profile>>({});
 
   const [loading, setLoading] = useState(false);
   const [searched, setSearched] = useState(false);
@@ -74,8 +75,12 @@ export default function History() {
     const date = new Date();
 
     const year = date.getFullYear();
-    const month = String(date.getMonth() + 1).padStart(2, '0');
-    const day = String(date.getDate()).padStart(2, '0');
+    const month = String(
+      date.getMonth() + 1
+    ).padStart(2, '0');
+    const day = String(
+      date.getDate()
+    ).padStart(2, '0');
 
     return `${year}-${month}-${day}`;
   };
@@ -89,31 +94,38 @@ export default function History() {
 
     const cleanDate = String(date).slice(0, 10);
 
-    return new Date(`${cleanDate}T00:00:00`).toLocaleDateString(
-      'en-IN',
-      {
-        day: '2-digit',
-        month: 'short',
-        year: 'numeric',
-      }
-    );
+    return new Date(
+      `${cleanDate}T00:00:00`
+    ).toLocaleDateString('en-IN', {
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric',
+    });
   };
 
   // =====================================================
-  // ADD / SUBTRACT DAYS
+  // SUBTRACT MONTHS
   // =====================================================
 
-  const addDaysToDate = (
+  const subtractMonths = (
     dateString: string,
-    days: number
+    months: number
   ) => {
-    const date = new Date(`${dateString}T00:00:00`);
+    const date = new Date(
+      `${dateString}T00:00:00`
+    );
 
-    date.setDate(date.getDate() + days);
+    date.setMonth(
+      date.getMonth() - months
+    );
 
     const year = date.getFullYear();
-    const month = String(date.getMonth() + 1).padStart(2, '0');
-    const day = String(date.getDate()).padStart(2, '0');
+    const month = String(
+      date.getMonth() + 1
+    ).padStart(2, '0');
+    const day = String(
+      date.getDate()
+    ).padStart(2, '0');
 
     return `${year}-${month}-${day}`;
   };
@@ -122,21 +134,28 @@ export default function History() {
   // PROFILE NAME
   // =====================================================
 
-  const getProfileName = (userId: string) => {
+  const getProfileName = (
+    userId: string
+  ) => {
     const profile = profiles[userId];
 
     if (!profile) {
       return 'Traveller';
     }
 
-    return profile.full_name?.trim() || 'Traveller';
+    return (
+      profile.full_name?.trim() ||
+      'Traveller'
+    );
   };
 
   // =====================================================
   // PROFILE PHOTO
   // =====================================================
 
-  const getProfilePhoto = (userId: string) => {
+  const getProfilePhoto = (
+    userId: string
+  ) => {
     const profile = profiles[userId];
 
     if (!profile) {
@@ -161,12 +180,16 @@ export default function History() {
     setProfiles({});
 
     if (!destination) {
-      setError('Please select a destination.');
+      setError(
+        'Please select a destination.'
+      );
       return;
     }
 
     if (!selectedDate) {
-      setError('Please select a trip date.');
+      setError(
+        'Please select a trip date.'
+      );
       return;
     }
 
@@ -188,28 +211,31 @@ export default function History() {
       // =====================================================
 
       const databaseDestination =
-        destinationMap[destination] || destination;
+        destinationMap[destination] ||
+        destination;
 
       // =====================================================
-      // SEARCH WINDOW
+      // 6 MONTH HISTORY RANGE
       //
-      // Selected date ke 7 din pehle se
-      // 7 din baad tak trips search hongi.
+      // Selected date se pichhle 6 months tak
+      // completed trips search hongi.
       //
       // Example:
-      // Selected = 15 Sep
-      // Search = 08 Sep -> 22 Sep
+      // Selected Date = 24 Sep 2026
+      // Search Range = 24 Mar 2026 -> 23 Sep 2026
       // =====================================================
 
-      const searchStartDate = addDaysToDate(
-        selectedDate,
-        -7
-      );
+      const searchStartDate =
+        subtractMonths(
+          selectedDate,
+          6
+        );
 
-      const searchEndDate = addDaysToDate(
-        selectedDate,
-        7
-      );
+      const searchEndDate =
+        subtractMonths(
+          selectedDate,
+          0
+        );
 
       // =====================================================
       // NORMAL TRIPS
@@ -265,22 +291,26 @@ export default function History() {
         normalTrips
       );
 
-      const normalHistory: HistoryTrip[] = (
-        normalTrips || []
-      ).map((trip: any) => ({
-        id: trip.id,
-        type: 'trip',
-        destination: trip.destination,
-        start_date: String(
-          trip.start_date
-        ).slice(0, 10),
-        end_date: String(
-          trip.end_date
-        ).slice(0, 10),
-        description: trip.description,
-        user_id: trip.user_id,
-        max_members: trip.max_members,
-      }));
+      const normalHistory: HistoryTrip[] =
+        (
+          normalTrips || []
+        ).map((trip: any) => ({
+          id: trip.id,
+          type: 'trip',
+          destination:
+            trip.destination,
+          start_date: String(
+            trip.start_date
+          ).slice(0, 10),
+          end_date: String(
+            trip.end_date
+          ).slice(0, 10),
+          description:
+            trip.description,
+          user_id: trip.user_id,
+          max_members:
+            trip.max_members,
+        }));
 
       // =====================================================
       // GROUP TRIPS
@@ -337,23 +367,28 @@ export default function History() {
         groups
       );
 
-      const groupHistory: HistoryTrip[] = (
-        groups || []
-      ).map((group: any) => ({
-        id: group.id,
-        type: 'group',
-        name: group.name,
-        destination: group.destination,
-        start_date: String(
-          group.start_date
-        ).slice(0, 10),
-        end_date: String(
-          group.end_date
-        ).slice(0, 10),
-        description: group.description,
-        user_id: group.created_by,
-        max_members: group.max_members,
-      }));
+      const groupHistory: HistoryTrip[] =
+        (
+          groups || []
+        ).map((group: any) => ({
+          id: group.id,
+          type: 'group',
+          name: group.name,
+          destination:
+            group.destination,
+          start_date: String(
+            group.start_date
+          ).slice(0, 10),
+          end_date: String(
+            group.end_date
+          ).slice(0, 10),
+          description:
+            group.description,
+          user_id:
+            group.created_by,
+          max_members:
+            group.max_members,
+        }));
 
       // =====================================================
       // COMBINE
@@ -383,7 +418,8 @@ export default function History() {
         ...new Set(
           combined
             .map(
-              (trip) => trip.user_id
+              (trip) =>
+                trip.user_id
             )
             .filter(Boolean)
         ),
@@ -418,7 +454,9 @@ export default function History() {
             Profile
           > = {};
 
-          (profileData || []).forEach(
+          (
+            profileData || []
+          ).forEach(
             (profile: Profile) => {
               profileMap[
                 profile.id
@@ -426,7 +464,9 @@ export default function History() {
             }
           );
 
-          setProfiles(profileMap);
+          setProfiles(
+            profileMap
+          );
         }
       }
     } catch (err: any) {
@@ -464,11 +504,10 @@ export default function History() {
   return (
     <div className="min-h-screen bg-stone-50">
 
-      {/* =====================================================
-          HEADER
-      ===================================================== */}
+      {/* HEADER */}
 
       <header className="border-b border-stone-200 bg-white">
+
         <div className="mx-auto flex max-w-7xl items-center px-6 py-4">
 
           <Link
@@ -484,10 +523,12 @@ export default function History() {
           <div className="flex items-center gap-3">
 
             <div className="flex h-10 w-10 items-center justify-center rounded-full bg-emerald-100">
+
               <HistoryIcon
                 size={20}
                 className="text-emerald-700"
               />
+
             </div>
 
             <div>
@@ -497,7 +538,7 @@ export default function History() {
               </h1>
 
               <p className="text-sm text-stone-500">
-                Find completed trips around your selected date
+                Find completed trips from the last 6 months
               </p>
 
             </div>
@@ -505,17 +546,14 @@ export default function History() {
           </div>
 
         </div>
+
       </header>
 
-      {/* =====================================================
-          MAIN
-      ===================================================== */}
+      {/* MAIN */}
 
       <main className="mx-auto max-w-5xl px-6 py-8">
 
-        {/* =====================================================
-            SEARCH CARD
-        ===================================================== */}
+        {/* SEARCH CARD */}
 
         <div className="rounded-2xl border border-stone-200 bg-white p-6 shadow-sm">
 
@@ -524,7 +562,7 @@ export default function History() {
           </h2>
 
           <p className="mt-1 text-sm text-stone-500">
-            Select a destination and date to find completed trips around that date.
+            Select a destination and date. Completed trips from the previous 6 months will be shown.
           </p>
 
           <div className="mt-6 grid gap-5 md:grid-cols-2">
@@ -605,7 +643,7 @@ export default function History() {
               </div>
 
               <p className="mt-2 text-xs text-stone-400">
-                Trips from 7 days before to 7 days after this date will be shown.
+                Searches completed trips from the previous 6 months.
               </p>
 
             </div>
@@ -658,15 +696,11 @@ export default function History() {
 
         </div>
 
-        {/* =====================================================
-            RESULTS
-        ===================================================== */}
+        {/* RESULTS */}
 
         {searched && !loading && (
 
           <div className="mt-8">
-
-            {/* RESULTS HEADER */}
 
             <div className="mb-5 flex items-center justify-between">
 
@@ -679,7 +713,14 @@ export default function History() {
                 {destination &&
                   selectedDate && (
                     <p className="mt-1 text-sm text-stone-500">
-                      {destination} • around{' '}
+                      {destination} • history from{' '}
+                      {formatDate(
+                        subtractMonths(
+                          selectedDate,
+                          6
+                        )
+                      )}{' '}
+                      to{' '}
                       {formatDate(
                         selectedDate
                       )}
@@ -699,9 +740,7 @@ export default function History() {
 
             </div>
 
-            {/* =====================================================
-                NO RESULTS
-            ===================================================== */}
+            {/* NO RESULTS */}
 
             {trips.length === 0 ? (
 
@@ -721,16 +760,12 @@ export default function History() {
                 </h3>
 
                 <p className="mx-auto mt-2 max-w-md text-sm text-stone-500">
-                  No completed trip was found for this destination within 7 days before or after the selected date.
+                  No completed trip was found for this destination during the previous 6 months.
                 </p>
 
               </div>
 
             ) : (
-
-              /* =====================================================
-                 TRIP CARDS
-              ===================================================== */
 
               <div className="space-y-4">
 
@@ -751,9 +786,7 @@ export default function History() {
 
                         <div className="flex flex-col gap-5 sm:flex-row">
 
-                          {/* =====================================================
-                              PROFILE PHOTO
-                          ===================================================== */}
+                          {/* PROFILE PHOTO */}
 
                           <div className="shrink-0">
 
@@ -790,9 +823,7 @@ export default function History() {
 
                           </div>
 
-                          {/* =====================================================
-                              DETAILS
-                          ===================================================== */}
+                          {/* DETAILS */}
 
                           <div className="min-w-0 flex-1">
 
@@ -825,8 +856,6 @@ export default function History() {
 
                               </div>
 
-                              {/* COMPLETED BADGE */}
-
                               <span className="flex items-center gap-1.5 rounded-full bg-emerald-100 px-3 py-1.5 text-xs font-semibold text-emerald-700">
 
                                 <CheckCircle2
@@ -839,13 +868,9 @@ export default function History() {
 
                             </div>
 
-                            {/* =====================================================
-                                TRIP INFORMATION
-                            ===================================================== */}
+                            {/* INFORMATION */}
 
                             <div className="mt-4 flex flex-wrap gap-x-6 gap-y-3 text-sm text-stone-600">
-
-                              {/* DESTINATION */}
 
                               <div className="flex items-center gap-2">
 
@@ -859,8 +884,6 @@ export default function History() {
                                 </span>
 
                               </div>
-
-                              {/* DATES */}
 
                               <div className="flex items-center gap-2">
 
@@ -880,8 +903,6 @@ export default function History() {
                                 </span>
 
                               </div>
-
-                              {/* TYPE */}
 
                               <div className="flex items-center gap-2">
 
@@ -914,9 +935,7 @@ export default function History() {
 
                             </div>
 
-                            {/* =====================================================
-                                DESCRIPTION
-                            ===================================================== */}
+                            {/* DESCRIPTION */}
 
                             {trip.description && (
                               <p className="mt-4 line-clamp-2 text-sm leading-6 text-stone-600">
@@ -924,13 +943,9 @@ export default function History() {
                               </p>
                             )}
 
-                            {/* =====================================================
-                                ACTION BUTTONS
-                            ===================================================== */}
+                            {/* ACTIONS */}
 
                             <div className="mt-5 flex flex-wrap gap-3">
-
-                              {/* VIEW TRIP */}
 
                               <Link
                                 to={`/trip/${trip.id}`}
@@ -944,8 +959,6 @@ export default function History() {
                                 View Trip
 
                               </Link>
-
-                              {/* VIEW PROFILE */}
 
                               <Link
                                 to={`/profile/${trip.user_id}`}
