@@ -12,6 +12,9 @@ import {
   User,
   Wallet,
   MessageCircle,
+  XCircle,
+  AlertTriangle,
+  ShieldAlert,
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
@@ -32,6 +35,9 @@ interface Trip {
   itinerary?: string | null;
   status?: string | null;
   created_at?: string | null;
+  is_confirmed?: boolean | null;
+  replacement_needed?: boolean | null;
+  confirmed_at?: string | null;
 }
 
 interface Profile {
@@ -70,6 +76,21 @@ interface DestinationPlan {
   itinerary: ItineraryDay[];
 }
 
+interface CancellationResult {
+  success?: boolean;
+  blocked?: boolean;
+  reason?: string;
+  message?: string;
+  cancellation_type?: string;
+  days_before_trip?: number;
+  strikes_added?: number;
+  reliability_penalty?: number;
+  reliability_score?: number;
+  total_strikes?: number;
+  restricted_until?: string | null;
+  emergency_review?: string;
+}
+
 export default function TripDetails() {
   const navigate = useNavigate();
   const { tripId } = useParams<{ tripId: string }>();
@@ -78,8 +99,19 @@ export default function TripDetails() {
   const [trip, setTrip] = useState<Trip | null>(null);
   const [creator, setCreator] = useState<Profile | null>(null);
   const [members, setMembers] = useState<Profile[]>([]);
+  const [memberRows, setMemberRows] = useState<TripMember[]>([]);
+
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+
+  // Cancellation states
+  const [showCancelModal, setShowCancelModal] = useState(false);
+  const [cancelReason, setCancelReason] = useState('');
+  const [isEmergency, setIsEmergency] = useState(false);
+  const [cancelling, setCancelling] = useState(false);
+  const [cancelError, setCancelError] = useState('');
+  const [cancelResult, setCancelResult] =
+    useState<CancellationResult | null>(null);
 
   useEffect(() => {
     if (tripId) {
@@ -131,7 +163,7 @@ export default function TripDetails() {
       setCreator((creatorData as Profile | null) || null);
 
       // 3. Fetch accepted members
-      const { data: memberRows, error: memberError } = await supabase
+      const { data: memberRowsData, error: memberError } = await supabase
         .from('trip_members')
         .select('id, user_id, status')
         .eq('trip_id', tripId)
@@ -141,7 +173,10 @@ export default function TripDetails() {
         throw memberError;
       }
 
-      const acceptedMembers = (memberRows || []) as TripMember[];
+      const acceptedMembers = (memberRowsData || []) as TripMember[];
+
+      setMemberRows(acceptedMembers);
+
       const memberIds = acceptedMembers
         .map((member) => member.user_id)
         .filter(Boolean);
@@ -234,12 +269,167 @@ export default function TripDetails() {
     });
   };
 
+  const getLocalDateString = (value?: string | null) => {
+    if (!value) return '';
+
+    return String(value).slice(0, 10);
+  };
+
+  const todayString = (() => {
+    const now = new Date();
+
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const day = String(now.getDate()).padStart(2, '0');
+
+    return `${year}-${month}-${day}`;
+  })();
+
+  const tripEndDate = getLocalDateString(trip?.end_date);
+
+  const isCompleted =
+    !!tripEndDate && tripEndDate < todayString;
+
+  const maxMembers =
+    Number(trip?.max_members) ||
+    Number(trip?.buddy_limit || 1) + 1;
+
+  const currentMembers = members.length;
+
+  const isFull = currentMembers >= maxMembers;
+
+  const isConfirmed =
+    !isCompleted &&
+    (trip?.is_confirmed === true ||
+      trip?.status === 'confirmed' ||
+      isFull);
+
+  const plan = getTripPlan();
+
+  const creatorAvatar =
+    creator?.avatar_url ||
+    creator?.profile_photo_url ||
+    '';
+
+  // Current user's membership
+  const currentMemberRow = memberRows.find(
+    (member) => member.user_id === user?.id
+  );
+
+  const isCurrentUserMember =
+    !!currentMemberRow &&
+    currentMemberRow.status === 'accepted';
+
+  const isOrganizer =
+    !!user?.id &&
+    !!trip?.user_id &&
+    user.id === trip.user_id;
+
+  const canCancel =
+    !!user?.id &&
+    !!trip &&
+    !isCompleted &&
+    isCurrentUserMember &&
+    currentMemberRow?.status !== 'cancelled';
+
+  const handleChat = () => {
+    if (!creator?.id) return;
+
+    navigate(`/chat/${creator.id}`);
+  };
+
+  const openCancelModal = () => {
+    setCancelError('');
+    setCancelResult(null);
+    setCancelReason('');
+    setIsEmergency(false);
+    setShowCancelModal(true);
+  };
+
+  const closeCancelModal = () => {
+    if (cancelling) return;
+
+    setShowCancelModal(false);
+    setCancelError('');
+    setCancelReason('');
+    setIsEmergency(false);
+  };
+
+  const handleCancelTrip = async () => {
+    if (!trip?.id || !user?.id) {
+      setCancelError('You must be logged in to cancel this trip.');
+      return;
+    }
+
+    if (!cancelReason.trim()) {
+      setCancelError('Please provide a cancellation reason.');
+      return;
+    }
+
+    try {
+      setCancelling(true);
+      setCancelError('');
+      setCancelResult(null);
+
+      const { data, error: rpcError } = await supabase.rpc(
+        'cancel_trip',
+        {
+          p_trip_id: trip.id,
+          p_reason: cancelReason.trim(),
+          p_is_emergency: isEmergency,
+        }
+      );
+
+      if (rpcError) {
+        throw rpcError;
+      }
+
+      let result: CancellationResult;
+
+      if (typeof data === 'string') {
+        try {
+          result = JSON.parse(data);
+        } catch {
+          result = {
+            success: false,
+            message: data,
+          };
+        }
+      } else {
+        result = data || {};
+      }
+
+      if (!result.success) {
+        setCancelError(
+          result.message || 'Unable to cancel this trip.'
+        );
+        return;
+      }
+
+      setCancelResult(result);
+
+      // Refresh trip/member information
+      await fetchTripDetails();
+    } catch (err: any) {
+      console.error('Cancellation error:', err);
+
+      setCancelError(
+        err?.message ||
+          'Something went wrong while cancelling the trip.'
+      );
+    } finally {
+      setCancelling(false);
+    }
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen bg-stone-50 flex items-center justify-center">
         <div className="flex flex-col items-center gap-3">
           <Loader2 className="w-8 h-8 text-emerald-600 animate-spin" />
-          <p className="text-stone-600">Loading trip details...</p>
+          <p className="text-stone-600">
+            Loading trip details...
+          </p>
         </div>
       </div>
     );
@@ -267,80 +457,6 @@ export default function TripDetails() {
       </div>
     );
   }
-
-  const maxMembers =
-    Number(trip.max_members) ||
-    Number(trip.buddy_limit || 1) + 1;
-
-  /*
-   * IMPORTANT:
-   * Plans.tsx inserts the trip owner into trip_members
-   * with status = accepted.
-   *
-   * So members.length normally represents:
-   * owner + accepted buddies.
-   *
-   * HOWEVER:
-   * History can contain trips whose end_date is already in
-   * the past. A completed trip must NEVER show:
-   * - OPEN
-   * - Waiting for members
-   * - spots remaining
-   * - Join/waiting status
-   *
-   * Completed status is therefore based on the trip dates
-   * and takes priority over the database status/capacity.
-   */
-  const currentMembers = members.length;
-
-  const getLocalDateString = (value?: string | null) => {
-    if (!value) return '';
-
-    const clean = String(value).slice(0, 10);
-
-    return clean;
-  };
-
-  const todayString = (() => {
-    const now = new Date();
-
-    const year = now.getFullYear();
-    const month = String(now.getMonth() + 1).padStart(2, '0');
-    const day = String(now.getDate()).padStart(2, '0');
-
-    return `${year}-${month}-${day}`;
-  })();
-
-  const tripEndDate = getLocalDateString(trip.end_date);
-
-  // A trip is completed once its end date has passed.
-  const isCompleted =
-    !!tripEndDate && tripEndDate < todayString;
-
-  const isFull = currentMembers >= maxMembers;
-
-  // Completed trips are not OPEN/CONFIRMED-for-booking.
-  // Their completed state takes priority.
-  const isConfirmed =
-    !isCompleted &&
-    (trip.status === 'confirmed' || isFull);
-
-  const plan = getTripPlan();
-
-  const creatorAvatar =
-    creator?.avatar_url ||
-    creator?.profile_photo_url ||
-    '';
-
-  const handleChat = () => {
-    if (!creator?.id) return;
-
-    /*
-     * Keep this compatible with the existing chat route.
-     * If your Chat.tsx uses a different route, change only this line.
-     */
-    navigate(`/chat/${creator.id}`);
-  };
 
   return (
     <div className="min-h-screen bg-stone-50">
@@ -394,6 +510,7 @@ export default function TripDetails() {
               }`}
             >
               <CheckCircle2 className="w-5 h-5" />
+
               {isCompleted
                 ? 'COMPLETED'
                 : isConfirmed
@@ -402,6 +519,26 @@ export default function TripDetails() {
             </div>
           </div>
         </div>
+
+        {/* REPLACEMENT NOTICE */}
+        {!isCompleted && trip.replacement_needed && (
+          <div className="mb-6 rounded-2xl border border-amber-200 bg-amber-50 p-5">
+            <div className="flex gap-3">
+              <AlertTriangle className="w-6 h-6 text-amber-600 shrink-0 mt-0.5" />
+
+              <div>
+                <h3 className="font-bold text-amber-900">
+                  Replacement Traveler Needed
+                </h3>
+
+                <p className="text-sm text-amber-800 mt-1 leading-6">
+                  A traveler has cancelled this trip. A replacement
+                  spot is currently available.
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
 
         <div className="grid lg:grid-cols-3 gap-6">
           {/* LEFT */}
@@ -428,6 +565,7 @@ export default function TripDetails() {
                 <div className="p-4 rounded-xl bg-stone-50">
                   <div className="flex items-center gap-2 text-emerald-600 mb-2">
                     <MapPin className="w-5 h-5" />
+
                     <span className="text-sm font-medium">
                       Destination
                     </span>
@@ -441,6 +579,7 @@ export default function TripDetails() {
                 <div className="p-4 rounded-xl bg-stone-50">
                   <div className="flex items-center gap-2 text-emerald-600 mb-2">
                     <Calendar className="w-5 h-5" />
+
                     <span className="text-sm font-medium">
                       Travel Dates
                     </span>
@@ -458,6 +597,7 @@ export default function TripDetails() {
                 <div className="p-4 rounded-xl bg-stone-50">
                   <div className="flex items-center gap-2 text-emerald-600 mb-2">
                     <Users className="w-5 h-5" />
+
                     <span className="text-sm font-medium">
                       {isCompleted ? 'Trip Status' : 'Capacity'}
                     </span>
@@ -479,9 +619,19 @@ export default function TripDetails() {
                         {currentMembers} / {maxMembers}
                       </p>
 
-                      <p className="text-sm text-stone-600">
-                        {Math.max(maxMembers - currentMembers, 0)} spots
-                        remaining
+                      <p
+                        className={`text-sm ${
+                          isFull
+                            ? 'text-red-600 font-semibold'
+                            : 'text-stone-600'
+                        }`}
+                      >
+                        {isFull
+                          ? 'FULL'
+                          : `${Math.max(
+                              maxMembers - currentMembers,
+                              0
+                            )} spots remaining`}
                       </p>
                     </>
                   )}
@@ -490,6 +640,7 @@ export default function TripDetails() {
                 <div className="p-4 rounded-xl bg-stone-50">
                   <div className="flex items-center gap-2 text-emerald-600 mb-2">
                     <CheckCircle2 className="w-5 h-5" />
+
                     <span className="text-sm font-medium">
                       Status
                     </span>
@@ -514,6 +665,7 @@ export default function TripDetails() {
                   <div className="p-4 rounded-xl bg-stone-50">
                     <div className="flex items-center gap-2 text-emerald-600 mb-2">
                       <Bus className="w-5 h-5" />
+
                       <span className="text-sm font-medium">
                         Transport
                       </span>
@@ -529,6 +681,7 @@ export default function TripDetails() {
                   <div className="p-4 rounded-xl bg-stone-50">
                     <div className="flex items-center gap-2 text-emerald-600 mb-2">
                       <Hotel className="w-5 h-5" />
+
                       <span className="text-sm font-medium">
                         Accommodation
                       </span>
@@ -545,13 +698,17 @@ export default function TripDetails() {
                     <div className="p-4 rounded-xl bg-stone-50">
                       <div className="flex items-center gap-2 text-emerald-600 mb-2">
                         <Wallet className="w-5 h-5" />
+
                         <span className="text-sm font-medium">
                           Budget
                         </span>
                       </div>
 
                       <p className="font-semibold text-stone-900">
-                        ₹{Number(trip.budget).toLocaleString('en-IN')}
+                        ₹
+                        {Number(trip.budget).toLocaleString(
+                          'en-IN'
+                        )}
                       </p>
                     </div>
                   )}
@@ -624,17 +781,20 @@ export default function TripDetails() {
                           </h4>
 
                           <ul className="space-y-2">
-                            {day.activities.map((activity, index) => (
-                              <li
-                                key={`${day.day}-${index}`}
-                                className="flex gap-3 text-stone-600"
-                              >
-                                <span className="text-emerald-600 font-bold">
-                                  •
-                                </span>
-                                <span>{activity}</span>
-                              </li>
-                            ))}
+                            {day.activities.map(
+                              (activity, index) => (
+                                <li
+                                  key={`${day.day}-${index}`}
+                                  className="flex gap-3 text-stone-600"
+                                >
+                                  <span className="text-emerald-600 font-bold">
+                                    •
+                                  </span>
+
+                                  <span>{activity}</span>
+                                </li>
+                              )
+                            )}
                           </ul>
 
                           {day.hotel && (
@@ -676,6 +836,7 @@ export default function TripDetails() {
                 ) : (
                   <div className="text-center py-8 text-stone-500">
                     <MapPin className="w-10 h-10 mx-auto mb-3 text-stone-300" />
+
                     <p className="font-medium">
                       Itinerary is not available for this destination.
                     </p>
@@ -695,13 +856,14 @@ export default function TripDetails() {
                   <p className="text-sm text-stone-500 mt-1">
                     {isCompleted
                       ? 'This trip has already ended'
-                      : `${currentMembers} / ${maxMembers} travelers`}
+                      : `${currentMembers}/${maxMembers} travelers`}
                   </p>
                 </div>
 
                 {(isCompleted || isConfirmed) && (
                   <span className="text-sm font-semibold text-emerald-700 flex items-center gap-1">
                     <CheckCircle2 className="w-4 h-4" />
+
                     {isCompleted ? 'Completed' : 'Full'}
                   </span>
                 )}
@@ -714,7 +876,8 @@ export default function TripDetails() {
                     member.profile_photo_url ||
                     '';
 
-                  const isCreator = member.id === trip.user_id;
+                  const isCreator =
+                    member.id === trip.user_id;
 
                   return (
                     <div
@@ -725,7 +888,9 @@ export default function TripDetails() {
                         {avatar ? (
                           <img
                             src={avatar}
-                            alt={member.full_name || 'Traveler'}
+                            alt={
+                              member.full_name || 'Traveler'
+                            }
                             className="w-12 h-12 rounded-full object-cover"
                           />
                         ) : (
@@ -740,7 +905,9 @@ export default function TripDetails() {
                           </p>
 
                           <p className="text-sm text-stone-500">
-                            {isCreator ? 'Trip Organizer' : 'Trip Member'}
+                            {isCreator
+                              ? 'Trip Organizer'
+                              : 'Trip Member'}
                           </p>
                         </div>
                       </div>
@@ -784,7 +951,9 @@ export default function TripDetails() {
                   {creatorAvatar ? (
                     <img
                       src={creatorAvatar}
-                      alt={creator.full_name || 'Organizer'}
+                      alt={
+                        creator.full_name || 'Organizer'
+                      }
                       className="w-14 h-14 rounded-full object-cover"
                     />
                   ) : (
@@ -864,7 +1033,9 @@ export default function TripDetails() {
 
                   <p className="text-sm text-stone-600">
                     {isCompleted
-                      ? `Ended on ${formatDate(trip.end_date)}`
+                      ? `Ended on ${formatDate(
+                          trip.end_date
+                        )}`
                       : `${currentMembers}/${maxMembers} travelers`}
                   </p>
                 </div>
@@ -872,13 +1043,17 @@ export default function TripDetails() {
 
               {isCompleted ? (
                 <p className="text-sm text-emerald-800 leading-6">
-                  This trip has already ended. It is shown here as part
-                  of your travel history and is no longer accepting
-                  members.
+                  This trip has already ended. It is shown here as
+                  part of your travel history and is no longer
+                  accepting members.
                 </p>
               ) : !isConfirmed ? (
                 <p className="text-sm text-stone-600 leading-6">
-                  {Math.max(maxMembers - currentMembers, 0)} more{' '}
+                  {Math.max(
+                    maxMembers - currentMembers,
+                    0
+                  )}{' '}
+                  more{' '}
                   {maxMembers - currentMembers === 1
                     ? 'traveler is'
                     : 'travelers are'}{' '}
@@ -887,12 +1062,14 @@ export default function TripDetails() {
               ) : (
                 <>
                   <p className="text-sm text-emerald-800 leading-6 mb-4">
-                    All traveler slots are filled. Budget Split is now
-                    available for this confirmed trip.
+                    All traveler slots are filled. Budget Split is
+                    now available for this confirmed trip.
                   </p>
 
                   <button
-                    onClick={() => navigate(`/budget/${trip.id}`)}
+                    onClick={() =>
+                      navigate(`/budget/${trip.id}`)
+                    }
                     className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-emerald-600 text-white font-semibold hover:bg-emerald-700"
                   >
                     <Wallet className="w-5 h-5" />
@@ -901,6 +1078,36 @@ export default function TripDetails() {
                 </>
               )}
             </section>
+
+            {/* CANCELLATION */}
+            {canCancel && (
+              <section className="bg-white rounded-2xl border border-red-200 shadow-sm p-6">
+                <div className="flex items-start gap-3">
+                  <div className="w-11 h-11 rounded-full bg-red-50 flex items-center justify-center shrink-0">
+                    <XCircle className="w-6 h-6 text-red-600" />
+                  </div>
+
+                  <div>
+                    <h2 className="text-lg font-bold text-stone-900">
+                      Trip Cancellation
+                    </h2>
+
+                    <p className="text-sm text-stone-600 mt-1 leading-6">
+                      Cancelling a confirmed trip close to the
+                      travel date may affect your Travel Reliability.
+                    </p>
+                  </div>
+                </div>
+
+                <button
+                  onClick={openCancelModal}
+                  className="w-full mt-5 flex items-center justify-center gap-2 px-4 py-3 rounded-xl border border-red-300 bg-white text-red-600 font-semibold hover:bg-red-50 transition"
+                >
+                  <XCircle className="w-5 h-5" />
+                  Cancel Trip
+                </button>
+              </section>
+            )}
 
             {/* PLAN SUMMARY */}
             {plan && (
@@ -911,21 +1118,30 @@ export default function TripDetails() {
 
                 <div className="space-y-3 text-sm">
                   <div>
-                    <p className="text-stone-500">Duration</p>
+                    <p className="text-stone-500">
+                      Duration
+                    </p>
+
                     <p className="font-semibold text-stone-900">
                       {plan.duration}
                     </p>
                   </div>
 
                   <div>
-                    <p className="text-stone-500">Approx. Budget</p>
+                    <p className="text-stone-500">
+                      Approx. Budget
+                    </p>
+
                     <p className="font-semibold text-stone-900">
                       {plan.budget}
                     </p>
                   </div>
 
                   <div>
-                    <p className="text-stone-500">Transport</p>
+                    <p className="text-stone-500">
+                      Transport
+                    </p>
+
                     <p className="font-semibold text-stone-900">
                       {plan.transport}
                     </p>
@@ -944,6 +1160,254 @@ export default function TripDetails() {
           </aside>
         </div>
       </main>
+
+      {/* ============================================
+          CANCELLATION MODAL
+      ============================================ */}
+      {showCancelModal && (
+        <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
+          <div className="w-full max-w-lg bg-white rounded-2xl shadow-2xl overflow-hidden">
+            {/* Modal Header */}
+            <div className="p-6 border-b border-stone-200">
+              <div className="flex items-start justify-between gap-4">
+                <div className="flex items-start gap-3">
+                  <div className="w-11 h-11 rounded-full bg-red-50 flex items-center justify-center">
+                    <ShieldAlert className="w-6 h-6 text-red-600" />
+                  </div>
+
+                  <div>
+                    <h2 className="text-xl font-bold text-stone-900">
+                      Cancel This Trip?
+                    </h2>
+
+                    <p className="text-sm text-stone-600 mt-1">
+                      {trip.destination}
+                    </p>
+                  </div>
+                </div>
+
+                {!cancelling && (
+                  <button
+                    onClick={closeCancelModal}
+                    className="text-stone-400 hover:text-stone-700"
+                  >
+                    <XCircle className="w-6 h-6" />
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* Successful cancellation */}
+            {cancelResult?.success ? (
+              <div className="p-6">
+                <div className="rounded-2xl bg-emerald-50 border border-emerald-200 p-5">
+                  <div className="flex items-center gap-3">
+                    <CheckCircle2 className="w-7 h-7 text-emerald-600" />
+
+                    <div>
+                      <h3 className="font-bold text-emerald-900">
+                        Trip Cancelled Successfully
+                      </h3>
+
+                      <p className="text-sm text-emerald-800 mt-1">
+                        Your cancellation has been recorded.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="mt-5 space-y-3 text-sm">
+                    {cancelResult.cancellation_type && (
+                      <div className="flex justify-between">
+                        <span className="text-stone-600">
+                          Cancellation type
+                        </span>
+
+                        <span className="font-semibold text-stone-900 capitalize">
+                          {cancelResult.cancellation_type}
+                        </span>
+                      </div>
+                    )}
+
+                    <div className="flex justify-between">
+                      <span className="text-stone-600">
+                        Strikes added
+                      </span>
+
+                      <span className="font-semibold text-stone-900">
+                        {cancelResult.strikes_added ?? 0}
+                      </span>
+                    </div>
+
+                    <div className="flex justify-between">
+                      <span className="text-stone-600">
+                        Reliability penalty
+                      </span>
+
+                      <span className="font-semibold text-stone-900">
+                        {cancelResult.reliability_penalty ?? 0}
+                      </span>
+                    </div>
+
+                    {cancelResult.reliability_score !==
+                      undefined && (
+                      <div className="flex justify-between">
+                        <span className="text-stone-600">
+                          New reliability score
+                        </span>
+
+                        <span className="font-bold text-emerald-700">
+                          {cancelResult.reliability_score}
+                        </span>
+                      </div>
+                    )}
+
+                    {cancelResult.emergency_review ===
+                      'pending' && (
+                      <div className="mt-4 p-3 rounded-xl bg-amber-50 border border-amber-200">
+                        <p className="text-sm text-amber-800">
+                          Your emergency cancellation has been
+                          submitted for review. The final penalty
+                          decision will be made after review.
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                <button
+                  onClick={() => {
+                    setShowCancelModal(false);
+                    setCancelResult(null);
+                  }}
+                  className="w-full mt-5 px-4 py-3 rounded-xl bg-emerald-600 text-white font-semibold hover:bg-emerald-700"
+                >
+                  Done
+                </button>
+              </div>
+            ) : (
+              <>
+                {/* Warning */}
+                <div className="p-6">
+                  <div className="rounded-xl bg-amber-50 border border-amber-200 p-4">
+                    <div className="flex gap-3">
+                      <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+
+                      <div className="text-sm text-amber-900 leading-6">
+                        <p className="font-semibold mb-1">
+                          Please cancel responsibly
+                        </p>
+
+                        <p>
+                          Late cancellation can affect your Travel
+                          Reliability and may add cancellation
+                          strikes to your account.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Emergency option */}
+                  <label className="flex items-start gap-3 mt-5 p-4 rounded-xl border border-stone-200 cursor-pointer hover:bg-stone-50">
+                    <input
+                      type="checkbox"
+                      checked={isEmergency}
+                      onChange={(e) =>
+                        setIsEmergency(e.target.checked)
+                      }
+                      className="mt-1 w-4 h-4 accent-emerald-600"
+                    />
+
+                    <div>
+                      <p className="font-semibold text-stone-900">
+                        Emergency Cancellation
+                      </p>
+
+                      <p className="text-sm text-stone-600 mt-1 leading-5">
+                        Select this only for a genuine emergency.
+                        Emergency cancellations are submitted for
+                        review.
+                      </p>
+                    </div>
+                  </label>
+
+                  {/* Reason */}
+                  <div className="mt-5">
+                    <label className="block text-sm font-semibold text-stone-800 mb-2">
+                      Cancellation Reason
+                    </label>
+
+                    <textarea
+                      value={cancelReason}
+                      onChange={(e) =>
+                        setCancelReason(e.target.value)
+                      }
+                      placeholder={
+                        isEmergency
+                          ? 'Explain the emergency...'
+                          : 'Why do you need to cancel this trip?'
+                      }
+                      rows={4}
+                      disabled={cancelling}
+                      className="w-full rounded-xl border border-stone-300 px-4 py-3 text-sm text-stone-900 outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 resize-none"
+                    />
+                  </div>
+
+                  {/* Error */}
+                  {cancelError && (
+                    <div className="mt-4 rounded-xl bg-red-50 border border-red-200 p-4">
+                      <div className="flex gap-3">
+                        <AlertTriangle className="w-5 h-5 text-red-600 shrink-0" />
+
+                        <div>
+                          <p className="font-semibold text-red-800">
+                            Cancellation unavailable
+                          </p>
+
+                          <p className="text-sm text-red-700 mt-1 leading-5">
+                            {cancelError}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Actions */}
+                  <div className="flex flex-col sm:flex-row gap-3 mt-6">
+                    <button
+                      onClick={closeCancelModal}
+                      disabled={cancelling}
+                      className="flex-1 px-4 py-3 rounded-xl border border-stone-300 bg-white text-stone-700 font-semibold hover:bg-stone-50 disabled:opacity-50"
+                    >
+                      Keep Trip
+                    </button>
+
+                    <button
+                      onClick={handleCancelTrip}
+                      disabled={
+                        cancelling ||
+                        !cancelReason.trim()
+                      }
+                      className="flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-red-600 text-white font-semibold hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      {cancelling ? (
+                        <>
+                          <Loader2 className="w-5 h-5 animate-spin" />
+                          Cancelling...
+                        </>
+                      ) : (
+                        <>
+                          <XCircle className="w-5 h-5" />
+                          Confirm Cancellation
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
