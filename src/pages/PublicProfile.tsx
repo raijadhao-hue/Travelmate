@@ -29,6 +29,14 @@ interface ProfileData {
   bio: string | null;
   preferences: string[] | null;
   is_verified: boolean | null;
+
+  // Travel Reliability
+  reliability_score: number | null;
+  cancellation_strikes: number | null;
+  late_cancellations: number | null;
+  no_shows: number | null;
+  joining_restricted_until: string | null;
+  account_status: 'active' | 'restricted' | 'suspended' | null;
 }
 
 interface Trip {
@@ -84,7 +92,8 @@ export default function PublicProfile() {
   const [friendStatus, setFriendStatus] =
     useState<FriendStatus>('none');
 
-  const [requestLoading, setRequestLoading] = useState(false);
+  const [requestLoading, setRequestLoading] =
+    useState(false);
 
   const [followers, setFollowers] = useState<Person[]>([]);
   const [following, setFollowing] = useState<Person[]>([]);
@@ -122,13 +131,22 @@ export default function PublicProfile() {
           profile_photo_url,
           bio,
           preferences,
-          is_verified
+          is_verified,
+          reliability_score,
+          cancellation_strikes,
+          late_cancellations,
+          no_shows,
+          joining_restricted_until,
+          account_status
         `)
         .eq('id', userId)
         .maybeSingle();
 
       if (profileError) {
-        console.error('Profile loading error:', profileError);
+        console.error(
+          'Profile loading error:',
+          profileError
+        );
       }
 
       if (!profileData) {
@@ -142,7 +160,26 @@ export default function PublicProfile() {
           profileData.avatar_url ||
           profileData.profile_photo_url ||
           null,
-        is_verified: profileData.is_verified === true,
+        is_verified:
+          profileData.is_verified === true,
+
+        reliability_score:
+          profileData.reliability_score ?? 100,
+
+        cancellation_strikes:
+          profileData.cancellation_strikes ?? 0,
+
+        late_cancellations:
+          profileData.late_cancellations ?? 0,
+
+        no_shows:
+          profileData.no_shows ?? 0,
+
+        joining_restricted_until:
+          profileData.joining_restricted_until ?? null,
+
+        account_status:
+          profileData.account_status ?? 'active',
       });
 
       // =================================================
@@ -163,10 +200,15 @@ export default function PublicProfile() {
           end_date
         `)
         .eq('user_id', userId)
-        .order('start_date', { ascending: true });
+        .order('start_date', {
+          ascending: true,
+        });
 
       if (tripError) {
-        console.error('Trips loading error:', tripError);
+        console.error(
+          'Trips loading error:',
+          tripError
+        );
       } else {
         setTrips(tripData || []);
       }
@@ -188,12 +230,18 @@ export default function PublicProfile() {
       // =================================================
 
       if (user && user.id !== userId) {
-        await checkFriendStatus(user.id, userId);
+        await checkFriendStatus(
+          user.id,
+          userId
+        );
       } else {
         setFriendStatus('none');
       }
     } catch (error) {
-      console.error('Public profile error:', error);
+      console.error(
+        'Public profile error:',
+        error
+      );
     } finally {
       setLoading(false);
     }
@@ -203,7 +251,9 @@ export default function PublicProfile() {
   // LOAD USER TRAVEL POSTS
   // =====================================================
 
-  const loadTravelPosts = async (profileId: string) => {
+  const loadTravelPosts = async (
+    profileId: string
+  ) => {
     try {
       setPostsLoading(true);
 
@@ -222,17 +272,29 @@ export default function PublicProfile() {
           created_at
         `)
         .eq('user_id', profileId)
-        .order('created_at', { ascending: false });
+        .order('created_at', {
+          ascending: false,
+        });
 
       if (error) {
-        console.error('Travel posts loading error:', error);
+        console.error(
+          'Travel posts loading error:',
+          error
+        );
+
         setPosts([]);
         return;
       }
 
-      setPosts((data || []) as TravelPost[]);
+      setPosts(
+        (data || []) as TravelPost[]
+      );
     } catch (error) {
-      console.error('Travel posts error:', error);
+      console.error(
+        'Travel posts error:',
+        error
+      );
+
       setPosts([]);
     } finally {
       setPostsLoading(false);
@@ -243,12 +305,17 @@ export default function PublicProfile() {
   // POST IMAGES
   // =====================================================
 
-  const getPostImages = (post: TravelPost) => {
+  const getPostImages = (
+    post: TravelPost
+  ) => {
     const images: string[] = [];
 
     if (Array.isArray(post.image_urls)) {
       post.image_urls.forEach((url) => {
-        if (typeof url === 'string' && url.trim()) {
+        if (
+          typeof url === 'string' &&
+          url.trim()
+        ) {
           images.push(url);
         }
       });
@@ -264,12 +331,16 @@ export default function PublicProfile() {
     return [...new Set(images)];
   };
 
-  const getPostTrip = (post: TravelPost) => {
+  const getPostTrip = (
+    post: TravelPost
+  ) => {
     if (!post.trip_id) return null;
 
     return (
-      trips.find((trip) => trip.id === post.trip_id) ||
-      null
+      trips.find(
+        (trip) =>
+          trip.id === post.trip_id
+      ) || null
     );
   };
 
@@ -277,7 +348,9 @@ export default function PublicProfile() {
   // LOAD FOLLOWERS / FOLLOWING
   // =====================================================
 
-  const loadFollowersFollowing = async (profileId: string) => {
+  const loadFollowersFollowing = async (
+    profileId: string
+  ) => {
     try {
       setPeopleLoading(true);
 
@@ -287,11 +360,17 @@ export default function PublicProfile() {
       } = await supabase
         .from('friend_requests')
         .select('sender_id')
-        .eq('receiver_id', profileId)
+        .eq(
+          'receiver_id',
+          profileId
+        )
         .eq('status', 'accepted');
 
       if (followerError) {
-        console.error('Followers rows error:', followerError);
+        console.error(
+          'Followers rows error:',
+          followerError
+        );
       }
 
       const {
@@ -300,21 +379,36 @@ export default function PublicProfile() {
       } = await supabase
         .from('friend_requests')
         .select('receiver_id')
-        .eq('sender_id', profileId)
+        .eq(
+          'sender_id',
+          profileId
+        )
         .eq('status', 'accepted');
 
       if (followingError) {
-        console.error('Following rows error:', followingError);
+        console.error(
+          'Following rows error:',
+          followingError
+        );
       }
 
       const followerIds =
-        followerRows?.map((row: any) => row.sender_id) || [];
+        followerRows?.map(
+          (row: any) =>
+            row.sender_id
+        ) || [];
 
       const followingIds =
-        followingRows?.map((row: any) => row.receiver_id) || [];
+        followingRows?.map(
+          (row: any) =>
+            row.receiver_id
+        ) || [];
 
       if (followerIds.length > 0) {
-        const { data, error } = await supabase
+        const {
+          data,
+          error,
+        } = await supabase
           .from('profiles')
           .select(`
             id,
@@ -324,28 +418,40 @@ export default function PublicProfile() {
             bio,
             is_verified
           `)
-          .in('id', followerIds);
+          .in(
+            'id',
+            followerIds
+          );
 
         if (error) {
-          console.error('Follower profiles error:', error);
+          console.error(
+            'Follower profiles error:',
+            error
+          );
         }
 
         setFollowers(
-          (data || []).map((person: any) => ({
-            ...person,
-            avatar_url:
-              person.avatar_url ||
-              person.profile_photo_url ||
-              null,
-            is_verified: person.is_verified === true,
-          }))
+          (data || []).map(
+            (person: any) => ({
+              ...person,
+              avatar_url:
+                person.avatar_url ||
+                person.profile_photo_url ||
+                null,
+              is_verified:
+                person.is_verified === true,
+            })
+          )
         );
       } else {
         setFollowers([]);
       }
 
       if (followingIds.length > 0) {
-        const { data, error } = await supabase
+        const {
+          data,
+          error,
+        } = await supabase
           .from('profiles')
           .select(`
             id,
@@ -355,33 +461,47 @@ export default function PublicProfile() {
             bio,
             is_verified
           `)
-          .in('id', followingIds);
+          .in(
+            'id',
+            followingIds
+          );
 
         if (error) {
-          console.error('Following profiles error:', error);
+          console.error(
+            'Following profiles error:',
+            error
+          );
         }
 
         setFollowing(
-          (data || []).map((person: any) => ({
-            ...person,
-            avatar_url:
-              person.avatar_url ||
-              person.profile_photo_url ||
-              null,
-            is_verified: person.is_verified === true,
-          }))
+          (data || []).map(
+            (person: any) => ({
+              ...person,
+              avatar_url:
+                person.avatar_url ||
+                person.profile_photo_url ||
+                null,
+              is_verified:
+                person.is_verified === true,
+            })
+          )
         );
       } else {
         setFollowing([]);
       }
     } catch (error) {
-      console.error('Followers/following error:', error);
+      console.error(
+        'Followers/following error:',
+        error
+      );
     } finally {
       setPeopleLoading(false);
     }
   };
 
-  const openPeopleModal = (type: PeopleModal) => {
+  const openPeopleModal = (
+    type: PeopleModal
+  ) => {
     setPeopleModal(type);
   };
 
@@ -389,9 +509,13 @@ export default function PublicProfile() {
     setPeopleModal(null);
   };
 
-  const openPersonProfile = (id: string) => {
+  const openPersonProfile = (
+    id: string
+  ) => {
     setPeopleModal(null);
-    navigate(`/public-profile/${id}`);
+    navigate(
+      `/public-profile/${id}`
+    );
   };
 
   // =====================================================
@@ -403,34 +527,58 @@ export default function PublicProfile() {
     otherUserId: string
   ) => {
     try {
-      const { data: sentRequest, error: sentError } =
-        await supabase
-          .from('friend_requests')
-          .select('id, sender_id, receiver_id, status')
-          .eq('sender_id', currentUserId)
-          .eq('receiver_id', otherUserId)
-          .maybeSingle();
+      const {
+        data: sentRequest,
+        error: sentError,
+      } = await supabase
+        .from('friend_requests')
+        .select(
+          'id, sender_id, receiver_id, status'
+        )
+        .eq(
+          'sender_id',
+          currentUserId
+        )
+        .eq(
+          'receiver_id',
+          otherUserId
+        )
+        .maybeSingle();
 
       if (sentError) {
-        console.error('Sent request check error:', sentError);
+        console.error(
+          'Sent request check error:',
+          sentError
+        );
       }
 
       if (sentRequest) {
         setFriendStatus(
-          sentRequest.status === 'accepted'
+          sentRequest.status ===
+            'accepted'
             ? 'friends'
             : 'pending_sent'
         );
         return;
       }
 
-      const { data: receivedRequest, error: receivedError } =
-        await supabase
-          .from('friend_requests')
-          .select('id, sender_id, receiver_id, status')
-          .eq('sender_id', otherUserId)
-          .eq('receiver_id', currentUserId)
-          .maybeSingle();
+      const {
+        data: receivedRequest,
+        error: receivedError,
+      } = await supabase
+        .from('friend_requests')
+        .select(
+          'id, sender_id, receiver_id, status'
+        )
+        .eq(
+          'sender_id',
+          otherUserId
+        )
+        .eq(
+          'receiver_id',
+          currentUserId
+        )
+        .maybeSingle();
 
       if (receivedError) {
         console.error(
@@ -441,7 +589,8 @@ export default function PublicProfile() {
 
       if (receivedRequest) {
         setFriendStatus(
-          receivedRequest.status === 'accepted'
+          receivedRequest.status ===
+            'accepted'
             ? 'friends'
             : 'pending_received'
         );
@@ -450,7 +599,11 @@ export default function PublicProfile() {
 
       setFriendStatus('none');
     } catch (error) {
-      console.error('Friend status error:', error);
+      console.error(
+        'Friend status error:',
+        error
+      );
+
       setFriendStatus('none');
     }
   };
@@ -460,44 +613,74 @@ export default function PublicProfile() {
   // =====================================================
 
   const sendFriendRequest = async () => {
-    if (!user || !userId || user.id === userId) return;
+    if (
+      !user ||
+      !userId ||
+      user.id === userId
+    ) {
+      return;
+    }
 
     try {
       setRequestLoading(true);
 
-      const { data: sentRequest } = await supabase
+      const {
+        data: sentRequest,
+      } = await supabase
         .from('friend_requests')
-        .select('id, sender_id, receiver_id, status')
-        .eq('sender_id', user.id)
-        .eq('receiver_id', userId)
+        .select(
+          'id, sender_id, receiver_id, status'
+        )
+        .eq(
+          'sender_id',
+          user.id
+        )
+        .eq(
+          'receiver_id',
+          userId
+        )
         .maybeSingle();
 
       if (sentRequest) {
         setFriendStatus(
-          sentRequest.status === 'accepted'
+          sentRequest.status ===
+            'accepted'
             ? 'friends'
             : 'pending_sent'
         );
         return;
       }
 
-      const { data: receivedRequest } = await supabase
+      const {
+        data: receivedRequest,
+      } = await supabase
         .from('friend_requests')
-        .select('id, sender_id, receiver_id, status')
-        .eq('sender_id', userId)
-        .eq('receiver_id', user.id)
+        .select(
+          'id, sender_id, receiver_id, status'
+        )
+        .eq(
+          'sender_id',
+          userId
+        )
+        .eq(
+          'receiver_id',
+          user.id
+        )
         .maybeSingle();
 
       if (receivedRequest) {
         setFriendStatus(
-          receivedRequest.status === 'accepted'
+          receivedRequest.status ===
+            'accepted'
             ? 'friends'
             : 'pending_received'
         );
         return;
       }
 
-      const { error: insertError } = await supabase
+      const {
+        error: insertError,
+      } = await supabase
         .from('friend_requests')
         .insert({
           sender_id: user.id,
@@ -510,13 +693,23 @@ export default function PublicProfile() {
           'Friend request insert error:',
           insertError
         );
-        alert(`Friend request failed: ${insertError.message}`);
+
+        alert(
+          `Friend request failed: ${insertError.message}`
+        );
+
         return;
       }
 
-      setFriendStatus('pending_sent');
+      setFriendStatus(
+        'pending_sent'
+      );
     } catch (error: any) {
-      console.error('Send friend request error:', error);
+      console.error(
+        'Send friend request error:',
+        error
+      );
+
       alert(
         error?.message ||
           'Failed to send friend request.'
@@ -536,23 +729,51 @@ export default function PublicProfile() {
     try {
       setRequestLoading(true);
 
-      const { error } = await supabase
-        .from('friend_requests')
-        .update({ status: 'accepted' })
-        .eq('sender_id', userId)
-        .eq('receiver_id', user.id)
-        .eq('status', 'pending');
+      const { error } =
+        await supabase
+          .from('friend_requests')
+          .update({
+            status: 'accepted',
+          })
+          .eq(
+            'sender_id',
+            userId
+          )
+          .eq(
+            'receiver_id',
+            user.id
+          )
+          .eq(
+            'status',
+            'pending'
+          );
 
       if (error) {
-        console.error('Accept request error:', error);
-        alert(`Could not accept request: ${error.message}`);
+        console.error(
+          'Accept request error:',
+          error
+        );
+
+        alert(
+          `Could not accept request: ${error.message}`
+        );
+
         return;
       }
 
-      setFriendStatus('friends');
-      await loadFollowersFollowing(userId);
+      setFriendStatus(
+        'friends'
+      );
+
+      await loadFollowersFollowing(
+        userId
+      );
     } catch (error: any) {
-      console.error('Accept request error:', error);
+      console.error(
+        'Accept request error:',
+        error
+      );
+
       alert(
         error?.message ||
           'Could not accept friend request.'
@@ -572,21 +793,38 @@ export default function PublicProfile() {
     try {
       setRequestLoading(true);
 
-      const { error } = await supabase
-        .from('friend_requests')
-        .delete()
-        .eq('sender_id', user.id)
-        .eq('receiver_id', userId);
+      const { error } =
+        await supabase
+          .from('friend_requests')
+          .delete()
+          .eq(
+            'sender_id',
+            user.id
+          )
+          .eq(
+            'receiver_id',
+            userId
+          );
 
       if (error) {
-        console.error('Cancel request error:', error);
-        alert(`Could not cancel request: ${error.message}`);
+        console.error(
+          'Cancel request error:',
+          error
+        );
+
+        alert(
+          `Could not cancel request: ${error.message}`
+        );
+
         return;
       }
 
       setFriendStatus('none');
     } catch (error: any) {
-      console.error('Cancel request error:', error);
+      console.error(
+        'Cancel request error:',
+        error
+      );
     } finally {
       setRequestLoading(false);
     }
@@ -594,31 +832,48 @@ export default function PublicProfile() {
 
   const handleMessage = () => {
     if (!userId) return;
-    navigate(`/chat/${userId}`);
+
+    navigate(
+      `/chat/${userId}`
+    );
   };
 
   // =====================================================
   // DATE FORMAT
   // =====================================================
 
-  const formatDate = (date: string) => {
+  const formatDate = (
+    date: string
+  ) => {
     if (!date) return '';
 
-    return new Date(date).toLocaleDateString('en-IN', {
-      day: 'numeric',
-      month: 'short',
-      year: 'numeric',
-    });
+    return new Date(
+      date
+    ).toLocaleDateString(
+      'en-IN',
+      {
+        day: 'numeric',
+        month: 'short',
+        year: 'numeric',
+      }
+    );
   };
 
-  const formatPostDate = (date: string) => {
+  const formatPostDate = (
+    date: string
+  ) => {
     if (!date) return '';
 
-    return new Date(date).toLocaleDateString('en-IN', {
-      day: 'numeric',
-      month: 'short',
-      year: 'numeric',
-    });
+    return new Date(
+      date
+    ).toLocaleDateString(
+      'en-IN',
+      {
+        day: 'numeric',
+        month: 'short',
+        year: 'numeric',
+      }
+    );
   };
 
   const profilePhoto =
@@ -626,17 +881,44 @@ export default function PublicProfile() {
     profile?.profile_photo_url ||
     '';
 
-  const futureTrips = trips.filter(
-    (trip) =>
-      trip.end_date &&
-      trip.end_date >= today
+  const futureTrips =
+    trips.filter(
+      (trip) =>
+        trip.end_date &&
+        trip.end_date >= today
+    );
+
+  const pastTrips =
+    trips.filter(
+      (trip) =>
+        trip.end_date &&
+        trip.end_date < today
+    );
+
+  // =====================================================
+  // RELIABILITY VALUES
+  // =====================================================
+
+  const reliabilityScore = Math.min(
+    100,
+    Math.max(
+      0,
+      profile?.reliability_score ?? 100
+    )
   );
 
-  const pastTrips = trips.filter(
-    (trip) =>
-      trip.end_date &&
-      trip.end_date < today
-  );
+  const cancellationStrikes =
+    profile?.cancellation_strikes ?? 0;
+
+  const lateCancellations =
+    profile?.late_cancellations ?? 0;
+
+  const noShows =
+    profile?.no_shows ?? 0;
+
+  const accountStatus =
+    profile?.account_status ||
+    'active';
 
   // =====================================================
   // LOADING
@@ -646,7 +928,10 @@ export default function PublicProfile() {
     return (
       <div className="min-h-screen bg-stone-50 flex items-center justify-center">
         <div className="text-center">
-          <Loader2 className="w-10 h-10 text-emerald-600 animate-spin mx-auto mb-3" />
+          <Loader2
+            className="w-10 h-10 text-emerald-600 animate-spin mx-auto mb-3"
+          />
+
           <p className="text-stone-500">
             Loading profile...
           </p>
@@ -663,13 +948,18 @@ export default function PublicProfile() {
     return (
       <div className="min-h-screen bg-stone-50 flex items-center justify-center p-5">
         <div className="bg-white rounded-2xl p-8 text-center shadow">
-          <User className="w-12 h-12 text-stone-300 mx-auto mb-4" />
+          <User
+            className="w-12 h-12 text-stone-300 mx-auto mb-4"
+          />
+
           <h2 className="text-xl font-bold">
             User not found
           </h2>
 
           <button
-            onClick={() => navigate(-1)}
+            onClick={() =>
+              navigate(-1)
+            }
             className="mt-5 px-5 py-2.5 bg-emerald-600 text-white rounded-xl"
           >
             Go Back
@@ -698,8 +988,11 @@ export default function PublicProfile() {
       <div className="max-w-5xl mx-auto">
 
         {/* BACK */}
+
         <button
-          onClick={() => navigate(-1)}
+          onClick={() =>
+            navigate(-1)
+          }
           className="flex items-center gap-2 text-stone-600 hover:text-emerald-600 mb-5"
         >
           <ArrowLeft size={18} />
@@ -711,13 +1004,17 @@ export default function PublicProfile() {
         ================================================= */}
 
         <div className="bg-white rounded-3xl shadow-lg border border-stone-200 overflow-hidden">
+
           <div className="h-32 md:h-44 bg-gradient-to-r from-emerald-600 to-teal-600" />
 
           <div className="px-6 md:px-10 pb-8">
+
             <div className="flex flex-col md:flex-row gap-6 items-center md:items-end -mt-16">
 
               {/* PHOTO */}
+
               <div className="w-32 h-32 rounded-full border-4 border-white bg-emerald-50 shadow-lg overflow-hidden flex items-center justify-center shrink-0">
+
                 {profilePhoto ? (
                   <img
                     src={profilePhoto}
@@ -725,7 +1022,8 @@ export default function PublicProfile() {
                     className="w-full h-full object-cover"
                     referrerPolicy="no-referrer"
                     onError={(e) => {
-                      e.currentTarget.style.display = 'none';
+                      e.currentTarget.style.display =
+                        'none';
                     }}
                   />
                 ) : (
@@ -734,11 +1032,15 @@ export default function PublicProfile() {
                     className="text-emerald-600"
                   />
                 )}
+
               </div>
 
               {/* NAME */}
+
               <div className="flex-1 text-center md:text-left">
+
                 <div className="flex items-center justify-center md:justify-start gap-2">
+
                   <h1 className="text-3xl font-bold text-stone-900">
                     {name}
                   </h1>
@@ -754,6 +1056,7 @@ export default function PublicProfile() {
                       />
                     </span>
                   )}
+
                 </div>
 
                 {profile.is_verified === true && (
@@ -761,9 +1064,11 @@ export default function PublicProfile() {
                     Identity Verified
                   </p>
                 )}
+
               </div>
 
               {/* ACTIONS */}
+
               {user?.id !== profile.id && (
                 <div className="flex flex-wrap justify-center gap-3">
 
@@ -778,7 +1083,9 @@ export default function PublicProfile() {
                   {friendStatus === 'none' && (
                     <button
                       onClick={sendFriendRequest}
-                      disabled={requestLoading}
+                      disabled={
+                        requestLoading
+                      }
                       className="flex items-center gap-2 px-5 py-3 rounded-xl bg-emerald-600 text-white font-semibold hover:bg-emerald-700 disabled:opacity-60"
                     >
                       {requestLoading ? (
@@ -787,8 +1094,11 @@ export default function PublicProfile() {
                           className="animate-spin"
                         />
                       ) : (
-                        <UserPlus size={18} />
+                        <UserPlus
+                          size={18}
+                        />
                       )}
+
                       Add Friend
                     </button>
                   )}
@@ -796,7 +1106,9 @@ export default function PublicProfile() {
                   {friendStatus === 'pending_sent' && (
                     <button
                       onClick={cancelRequest}
-                      disabled={requestLoading}
+                      disabled={
+                        requestLoading
+                      }
                       className="flex items-center gap-2 px-5 py-3 rounded-xl bg-stone-100 text-stone-700 font-semibold hover:bg-stone-200"
                     >
                       <Clock size={18} />
@@ -807,7 +1119,9 @@ export default function PublicProfile() {
                   {friendStatus === 'pending_received' && (
                     <button
                       onClick={acceptFriendRequest}
-                      disabled={requestLoading}
+                      disabled={
+                        requestLoading
+                      }
                       className="flex items-center gap-2 px-5 py-3 rounded-xl bg-emerald-600 text-white font-semibold hover:bg-emerald-700 disabled:opacity-60"
                     >
                       {requestLoading ? (
@@ -816,8 +1130,11 @@ export default function PublicProfile() {
                           className="animate-spin"
                         />
                       ) : (
-                        <UserCheck size={18} />
+                        <UserCheck
+                          size={18}
+                        />
                       )}
+
                       Accept
                     </button>
                   )}
@@ -827,15 +1144,20 @@ export default function PublicProfile() {
                       disabled
                       className="flex items-center gap-2 px-5 py-3 rounded-xl bg-emerald-50 text-emerald-700 font-semibold"
                     >
-                      <UserCheck size={18} />
+                      <UserCheck
+                        size={18}
+                      />
                       Friends
                     </button>
                   )}
+
                 </div>
               )}
+
             </div>
 
             {/* BIO */}
+
             <div className="mt-7">
               <p className="text-stone-700 text-center md:text-left leading-relaxed">
                 {profile.bio ||
@@ -844,34 +1166,43 @@ export default function PublicProfile() {
             </div>
 
             {/* INTERESTS */}
+
             {profile.preferences &&
               profile.preferences.length > 0 && (
                 <div className="mt-5">
+
                   <h3 className="font-bold text-stone-900 mb-3">
                     Travel Interests
                   </h3>
 
                   <div className="flex flex-wrap gap-2">
+
                     {profile.preferences.map(
                       (preference) => (
                         <span
-                          key={preference}
+                          key={
+                            preference
+                          }
                           className="px-4 py-2 rounded-full bg-emerald-50 text-emerald-700 text-sm font-semibold"
                         >
                           {preference}
                         </span>
                       )
                     )}
+
                   </div>
                 </div>
               )}
 
             {/* STATS */}
+
             <div className="grid grid-cols-3 gap-3 mt-7">
+
               <div className="bg-stone-50 rounded-2xl p-4 text-center">
                 <p className="text-2xl font-bold text-stone-900">
                   {trips.length}
                 </p>
+
                 <p className="text-xs text-stone-500">
                   Trips
                 </p>
@@ -879,12 +1210,17 @@ export default function PublicProfile() {
 
               <button
                 type="button"
-                onClick={() => openPeopleModal('followers')}
+                onClick={() =>
+                  openPeopleModal(
+                    'followers'
+                  )
+                }
                 className="bg-stone-50 rounded-2xl p-4 text-center hover:bg-emerald-50 transition cursor-pointer"
               >
                 <p className="text-2xl font-bold text-stone-900">
                   {followers.length}
                 </p>
+
                 <p className="text-xs text-stone-500">
                   Followers
                 </p>
@@ -892,21 +1228,193 @@ export default function PublicProfile() {
 
               <button
                 type="button"
-                onClick={() => openPeopleModal('following')}
+                onClick={() =>
+                  openPeopleModal(
+                    'following'
+                  )
+                }
                 className="bg-stone-50 rounded-2xl p-4 text-center hover:bg-emerald-50 transition cursor-pointer"
               >
                 <p className="text-2xl font-bold text-stone-900">
                   {following.length}
                 </p>
+
                 <p className="text-xs text-stone-500">
                   Following
                 </p>
               </button>
+
             </div>
 
             <p className="text-center text-xs text-stone-400 mt-3">
               Tap followers or following to view the list
             </p>
+
+            {/* =================================================
+                TRAVEL RELIABILITY
+            ================================================= */}
+
+            <div className="mt-6 rounded-2xl border border-emerald-100 bg-emerald-50/60 p-5">
+
+              <div className="flex items-center gap-3 mb-4">
+
+                <div className="w-11 h-11 rounded-xl bg-white flex items-center justify-center shadow-sm">
+                  <ShieldCheck
+                    size={23}
+                    className="text-emerald-600"
+                  />
+                </div>
+
+                <div>
+                  <h3 className="font-bold text-stone-900">
+                    Travel Reliability
+                  </h3>
+
+                  <p className="text-xs text-stone-500">
+                    Based on travel participation history
+                  </p>
+                </div>
+
+              </div>
+
+              {/* SCORE */}
+
+              <div className="bg-white rounded-2xl p-4 border border-emerald-100">
+
+                <div className="flex items-center justify-between mb-2">
+
+                  <span className="text-sm font-semibold text-stone-700">
+                    Reliability Score
+                  </span>
+
+                  <span className="text-lg font-bold text-emerald-700">
+                    {reliabilityScore}/100
+                  </span>
+
+                </div>
+
+                <div className="w-full h-2.5 bg-stone-100 rounded-full overflow-hidden">
+
+                  <div
+                    className="h-full bg-emerald-500 rounded-full transition-all"
+                    style={{
+                      width: `${reliabilityScore}%`,
+                    }}
+                  />
+
+                </div>
+
+                <p className="text-xs text-stone-500 mt-2">
+                  Higher score indicates more reliable travel participation.
+                </p>
+
+              </div>
+
+              {/* RELIABILITY STATS */}
+
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mt-3">
+
+                <div className="bg-white rounded-xl p-3 text-center border border-stone-100">
+
+                  <p className="text-xl font-bold text-stone-900">
+                    {pastTrips.length}
+                  </p>
+
+                  <p className="text-[11px] text-stone-500">
+                    Completed Trips
+                  </p>
+
+                </div>
+
+                <div className="bg-white rounded-xl p-3 text-center border border-stone-100">
+
+                  <p className="text-xl font-bold text-amber-600">
+                    {lateCancellations}
+                  </p>
+
+                  <p className="text-[11px] text-stone-500">
+                    Late Cancellations
+                  </p>
+
+                </div>
+
+                <div className="bg-white rounded-xl p-3 text-center border border-stone-100">
+
+                  <p className="text-xl font-bold text-red-600">
+                    {noShows}
+                  </p>
+
+                  <p className="text-[11px] text-stone-500">
+                    No-Shows
+                  </p>
+
+                </div>
+
+                <div className="bg-white rounded-xl p-3 text-center border border-stone-100">
+
+                  <p className="text-xl font-bold text-stone-900">
+                    {cancellationStrikes}
+                  </p>
+
+                  <p className="text-[11px] text-stone-500">
+                    Strikes
+                  </p>
+
+                </div>
+
+              </div>
+
+              {/* STATUS */}
+
+              <div className="mt-3 flex items-center justify-between bg-white rounded-xl px-4 py-3 border border-stone-100">
+
+                <span className="text-sm font-semibold text-stone-700">
+                  Travel Status
+                </span>
+
+                <span
+                  className={`px-3 py-1 rounded-full text-xs font-bold ${
+                    accountStatus ===
+                    'suspended'
+                      ? 'bg-red-100 text-red-700'
+                      : accountStatus ===
+                        'restricted'
+                      ? 'bg-amber-100 text-amber-700'
+                      : 'bg-emerald-100 text-emerald-700'
+                  }`}
+                >
+                  {accountStatus ===
+                  'suspended'
+                    ? 'Suspended'
+                    : accountStatus ===
+                      'restricted'
+                    ? 'Restricted'
+                    : 'Active'}
+                </span>
+
+              </div>
+
+              {accountStatus ===
+                'restricted' &&
+                profile.joining_restricted_until && (
+                  <p className="text-xs text-amber-700 mt-2 text-center">
+                    Trip joining is temporarily restricted until{' '}
+                    {new Date(
+                      profile.joining_restricted_until
+                    ).toLocaleDateString(
+                      'en-IN',
+                      {
+                        day: 'numeric',
+                        month: 'short',
+                        year: 'numeric',
+                      }
+                    )}
+                    .
+                  </p>
+                )}
+
+            </div>
+
           </div>
         </div>
 
@@ -917,47 +1425,64 @@ export default function PublicProfile() {
         <div className="bg-white rounded-3xl shadow-lg border border-stone-200 p-6 md:p-8 mt-7">
 
           <div className="flex items-center justify-between gap-3 mb-6">
+
             <div className="flex items-center gap-3">
+
               <div className="w-11 h-11 rounded-2xl bg-emerald-50 flex items-center justify-center">
+
                 <ImageIcon
                   size={23}
                   className="text-emerald-600"
                 />
+
               </div>
 
               <div>
+
                 <h2 className="text-2xl font-bold text-stone-900">
                   Travel Feed
                 </h2>
+
                 <p className="text-sm text-stone-500">
                   {name}'s travel posts and memories
                 </p>
+
               </div>
+
             </div>
 
             <span className="rounded-full bg-emerald-50 text-emerald-700 px-3 py-1.5 text-sm font-semibold">
               {posts.length}{' '}
-              {posts.length === 1 ? 'post' : 'posts'}
+              {posts.length === 1
+                ? 'post'
+                : 'posts'}
             </span>
+
           </div>
 
           {postsLoading ? (
             <div className="py-12 text-center">
+
               <Loader2
                 size={32}
                 className="animate-spin text-emerald-600 mx-auto mb-3"
               />
+
               <p className="text-stone-500">
                 Loading travel posts...
               </p>
+
             </div>
           ) : posts.length === 0 ? (
             <div className="rounded-2xl bg-stone-50 border border-stone-200 py-12 px-5 text-center">
+
               <div className="w-14 h-14 rounded-full bg-white flex items-center justify-center mx-auto mb-4">
+
                 <ImageIcon
                   size={26}
                   className="text-stone-300"
                 />
+
               </div>
 
               <h3 className="font-semibold text-stone-800">
@@ -967,12 +1492,18 @@ export default function PublicProfile() {
               <p className="text-sm text-stone-500 mt-1">
                 {name} hasn't shared any travel memories yet.
               </p>
+
             </div>
           ) : (
             <div className="grid md:grid-cols-2 gap-5">
+
               {posts.map((post) => {
-                const images = getPostImages(post);
-                const postTrip = getPostTrip(post);
+
+                const images =
+                  getPostImages(post);
+
+                const postTrip =
+                  getPostTrip(post);
 
                 return (
                   <article
@@ -981,8 +1512,10 @@ export default function PublicProfile() {
                   >
 
                     {/* POST IMAGE */}
+
                     {images.length > 0 ? (
                       <div className="relative aspect-[4/3] bg-stone-100 overflow-hidden">
+
                         <img
                           src={images[0]}
                           alt={
@@ -996,25 +1529,33 @@ export default function PublicProfile() {
 
                         {images.length > 1 && (
                           <div className="absolute right-3 top-3 rounded-full bg-black/60 text-white px-3 py-1.5 text-xs font-semibold">
-                            +{images.length - 1} more
+                            +{images.length - 1}{' '}
+                            more
                           </div>
                         )}
+
                       </div>
                     ) : (
                       <div className="aspect-[4/3] bg-stone-100 flex items-center justify-center">
+
                         <ImageIcon
                           size={42}
                           className="text-stone-300"
                         />
+
                       </div>
                     )}
 
                     {/* POST CONTENT */}
+
                     <div className="p-5">
 
                       <div className="flex items-center justify-between gap-3">
+
                         <div className="flex items-center gap-2 min-w-0">
+
                           <div className="w-9 h-9 rounded-full bg-emerald-50 overflow-hidden flex items-center justify-center shrink-0">
+
                             {profilePhoto ? (
                               <img
                                 src={profilePhoto}
@@ -1028,16 +1569,23 @@ export default function PublicProfile() {
                                 className="text-emerald-600"
                               />
                             )}
+
                           </div>
 
                           <div className="min-w-0">
+
                             <p className="text-sm font-semibold text-stone-900 truncate">
                               {name}
                             </p>
+
                             <p className="text-xs text-stone-400">
-                              {formatPostDate(post.created_at)}
+                              {formatPostDate(
+                                post.created_at
+                              )}
                             </p>
+
                           </div>
+
                         </div>
 
                         {postTrip?.destination && (
@@ -1046,6 +1594,7 @@ export default function PublicProfile() {
                             {postTrip.destination}
                           </span>
                         )}
+
                       </div>
 
                       {post.caption && (
@@ -1059,41 +1608,60 @@ export default function PublicProfile() {
                           to={`/trip/${postTrip.id}`}
                           className="mt-4 flex items-center gap-2 rounded-xl bg-stone-50 border border-stone-200 px-3.5 py-3 hover:bg-emerald-50 hover:border-emerald-200 transition"
                         >
+
                           <MapPinned
                             size={17}
                             className="text-emerald-600 shrink-0"
                           />
 
                           <div className="min-w-0">
+
                             <p className="text-xs text-stone-400">
                               Related Trip
                             </p>
+
                             <p className="text-sm font-semibold text-stone-800 truncate">
                               {postTrip.destination}
                             </p>
+
                             <p className="text-xs text-stone-500">
-                              {formatDate(postTrip.start_date)}
+                              {formatDate(
+                                postTrip.start_date
+                              )}
                               {' → '}
-                              {formatDate(postTrip.end_date)}
+                              {formatDate(
+                                postTrip.end_date
+                              )}
                             </p>
+
                           </div>
 
                           <span className="ml-auto text-emerald-600 text-sm font-semibold">
                             View →
                           </span>
+
                         </Link>
                       )}
 
                       <div className="mt-4 flex items-center gap-2 text-xs text-stone-400">
+
                         <Heart size={15} />
-                        <span>Travel memory</span>
+
+                        <span>
+                          Travel memory
+                        </span>
+
                       </div>
+
                     </div>
+
                   </article>
                 );
               })}
+
             </div>
           )}
+
         </div>
 
         {/* =================================================
@@ -1101,13 +1669,16 @@ export default function PublicProfile() {
         ================================================= */}
 
         <div className="bg-white rounded-3xl shadow-lg border border-stone-200 p-6 md:p-8 mt-7">
+
           <div className="flex items-center gap-3 mb-6">
+
             <Clock
               className="text-emerald-600"
               size={24}
             />
 
             <div>
+
               <h2 className="text-2xl font-bold">
                 Future Trips
               </h2>
@@ -1115,7 +1686,9 @@ export default function PublicProfile() {
               <p className="text-sm text-stone-500">
                 Upcoming travel plans
               </p>
+
             </div>
+
           </div>
 
           {futureTrips.length === 0 ? (
@@ -1124,46 +1697,63 @@ export default function PublicProfile() {
             </p>
           ) : (
             <div className="grid md:grid-cols-2 gap-5">
-              {futureTrips.map((trip) => (
-                <div
-                  key={trip.id}
-                  className="border border-stone-200 rounded-2xl p-5 hover:shadow-md transition"
-                >
-                  <div className="flex items-center gap-2 mb-3">
-                    <MapPin
-                      size={19}
-                      className="text-emerald-600"
-                    />
 
-                    <h3 className="text-lg font-bold">
-                      {trip.destination}
-                    </h3>
-                  </div>
-
-                  {trip.description && (
-                    <p className="text-stone-600 text-sm mb-3">
-                      {trip.description}
-                    </p>
-                  )}
-
-                  <div className="flex items-center gap-2 text-sm text-stone-500">
-                    <Calendar size={16} />
-
-                    {formatDate(trip.start_date)}
-                    {' → '}
-                    {formatDate(trip.end_date)}
-                  </div>
-
-                  <Link
-                    to={`/trip/${trip.id}`}
-                    className="inline-block mt-4 text-emerald-600 font-semibold hover:underline"
+              {futureTrips.map(
+                (trip) => (
+                  <div
+                    key={trip.id}
+                    className="border border-stone-200 rounded-2xl p-5 hover:shadow-md transition"
                   >
-                    View Trip →
-                  </Link>
-                </div>
-              ))}
+
+                    <div className="flex items-center gap-2 mb-3">
+
+                      <MapPin
+                        size={19}
+                        className="text-emerald-600"
+                      />
+
+                      <h3 className="text-lg font-bold">
+                        {trip.destination}
+                      </h3>
+
+                    </div>
+
+                    {trip.description && (
+                      <p className="text-stone-600 text-sm mb-3">
+                        {trip.description}
+                      </p>
+                    )}
+
+                    <div className="flex items-center gap-2 text-sm text-stone-500">
+
+                      <Calendar size={16} />
+
+                      {formatDate(
+                        trip.start_date
+                      )}
+
+                      {' → '}
+
+                      {formatDate(
+                        trip.end_date
+                      )}
+
+                    </div>
+
+                    <Link
+                      to={`/trip/${trip.id}`}
+                      className="inline-block mt-4 text-emerald-600 font-semibold hover:underline"
+                    >
+                      View Trip →
+                    </Link>
+
+                  </div>
+                )
+              )}
+
             </div>
           )}
+
         </div>
 
         {/* =================================================
@@ -1171,13 +1761,16 @@ export default function PublicProfile() {
         ================================================= */}
 
         <div className="bg-white rounded-3xl shadow-lg border border-stone-200 p-6 md:p-8 mt-7 mb-8">
+
           <div className="flex items-center gap-3 mb-6">
+
             <CheckCircle
               className="text-emerald-600"
               size={24}
             />
 
             <div>
+
               <h2 className="text-2xl font-bold">
                 Past & Published Trips
               </h2>
@@ -1185,7 +1778,9 @@ export default function PublicProfile() {
               <p className="text-sm text-stone-500">
                 Trips this traveller has completed
               </p>
+
             </div>
+
           </div>
 
           {pastTrips.length === 0 ? (
@@ -1194,52 +1789,75 @@ export default function PublicProfile() {
             </p>
           ) : (
             <div className="grid md:grid-cols-2 gap-5">
-              {pastTrips.map((trip) => (
-                <div
-                  key={trip.id}
-                  className="border border-stone-200 rounded-2xl p-5 bg-stone-50"
-                >
-                  <div className="flex items-center gap-2 mb-3">
-                    <MapPin
-                      size={19}
-                      className="text-emerald-600"
-                    />
 
-                    <h3 className="text-lg font-bold">
-                      {trip.destination}
-                    </h3>
-                  </div>
-
-                  {trip.description && (
-                    <p className="text-stone-600 text-sm mb-3">
-                      {trip.description}
-                    </p>
-                  )}
-
-                  <div className="flex items-center gap-2 text-sm text-stone-500 mb-3">
-                    <Calendar size={16} />
-
-                    {formatDate(trip.start_date)}
-                    {' → '}
-                    {formatDate(trip.end_date)}
-                  </div>
-
-                  <div className="flex items-center gap-2 text-emerald-600 text-sm font-semibold">
-                    <CheckCircle size={16} />
-                    Completed
-                  </div>
-
-                  <Link
-                    to={`/trip/${trip.id}`}
-                    className="inline-block mt-3 text-emerald-600 font-semibold hover:underline"
+              {pastTrips.map(
+                (trip) => (
+                  <div
+                    key={trip.id}
+                    className="border border-stone-200 rounded-2xl p-5 bg-stone-50"
                   >
-                    View Trip →
-                  </Link>
-                </div>
-              ))}
+
+                    <div className="flex items-center gap-2 mb-3">
+
+                      <MapPin
+                        size={19}
+                        className="text-emerald-600"
+                      />
+
+                      <h3 className="text-lg font-bold">
+                        {trip.destination}
+                      </h3>
+
+                    </div>
+
+                    {trip.description && (
+                      <p className="text-stone-600 text-sm mb-3">
+                        {trip.description}
+                      </p>
+                    )}
+
+                    <div className="flex items-center gap-2 text-sm text-stone-500 mb-3">
+
+                      <Calendar size={16} />
+
+                      {formatDate(
+                        trip.start_date
+                      )}
+
+                      {' → '}
+
+                      {formatDate(
+                        trip.end_date
+                      )}
+
+                    </div>
+
+                    <div className="flex items-center gap-2 text-emerald-600 text-sm font-semibold">
+
+                      <CheckCircle
+                        size={16}
+                      />
+
+                      Completed
+
+                    </div>
+
+                    <Link
+                      to={`/trip/${trip.id}`}
+                      className="inline-block mt-3 text-emerald-600 font-semibold hover:underline"
+                    >
+                      View Trip →
+                    </Link>
+
+                  </div>
+                )
+              )}
+
             </div>
           )}
+
         </div>
+
       </div>
 
       {/* =====================================================
@@ -1249,22 +1867,33 @@ export default function PublicProfile() {
       {peopleModal && (
         <div
           className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4"
-          onClick={closePeopleModal}
+          onClick={
+            closePeopleModal
+          }
         >
+
           <div
             className="bg-white w-full max-w-md rounded-3xl shadow-2xl overflow-hidden"
-            onClick={(e) => e.stopPropagation()}
+            onClick={(e) =>
+              e.stopPropagation()
+            }
           >
+
             <div className="flex items-center justify-between px-6 py-5 border-b border-stone-200">
+
               <div className="flex items-center gap-3">
+
                 <div className="w-10 h-10 rounded-full bg-emerald-50 flex items-center justify-center">
+
                   <Users
                     size={20}
                     className="text-emerald-600"
                   />
+
                 </div>
 
                 <div>
+
                   <h2 className="text-xl font-bold text-stone-900">
                     {modalTitle}
                   </h2>
@@ -1275,21 +1904,28 @@ export default function PublicProfile() {
                       ? 'person'
                       : 'people'}
                   </p>
+
                 </div>
+
               </div>
 
               <button
                 type="button"
-                onClick={closePeopleModal}
+                onClick={
+                  closePeopleModal
+                }
                 className="w-9 h-9 rounded-full hover:bg-stone-100 flex items-center justify-center"
               >
                 <X size={20} />
               </button>
+
             </div>
 
             <div className="max-h-[65vh] overflow-y-auto">
+
               {peopleLoading ? (
                 <div className="py-12 text-center">
+
                   <Loader2
                     size={30}
                     className="animate-spin text-emerald-600 mx-auto mb-3"
@@ -1298,16 +1934,19 @@ export default function PublicProfile() {
                   <p className="text-stone-500">
                     Loading...
                   </p>
+
                 </div>
               ) : modalPeople.length === 0 ? (
                 <div className="py-12 text-center px-6">
+
                   <Users
                     size={45}
                     className="text-stone-300 mx-auto mb-3"
                   />
 
                   <p className="font-semibold text-stone-700">
-                    {peopleModal === 'followers'
+                    {peopleModal ===
+                    'followers'
                       ? 'No followers yet'
                       : 'Not following anyone yet'}
                   </p>
@@ -1315,87 +1954,119 @@ export default function PublicProfile() {
                   <p className="text-sm text-stone-400 mt-1">
                     This list is empty.
                   </p>
+
                 </div>
               ) : (
                 <div className="divide-y divide-stone-100">
-                  {modalPeople.map((person) => {
-                    const personName =
-                      person.full_name?.trim() ||
-                      'Traveler';
 
-                    const personPhoto =
-                      person.avatar_url ||
-                      person.profile_photo_url ||
-                      '';
+                  {modalPeople.map(
+                    (person) => {
 
-                    return (
-                      <button
-                        key={person.id}
-                        type="button"
-                        onClick={() =>
-                          openPersonProfile(person.id)
-                        }
-                        className="w-full flex items-center gap-4 px-6 py-4 hover:bg-stone-50 transition text-left"
-                      >
-                        <div className="w-14 h-14 rounded-full overflow-hidden bg-emerald-100 flex items-center justify-center shrink-0 border border-stone-200">
-                          {personPhoto ? (
-                            <img
-                              src={personPhoto}
-                              alt={personName}
-                              className="w-full h-full object-cover"
-                              referrerPolicy="no-referrer"
-                              onError={(e) => {
-                                e.currentTarget.style.display =
-                                  'none';
-                              }}
-                            />
-                          ) : (
-                            <span className="text-xl font-bold text-emerald-600">
-                              {personName
-                                .charAt(0)
-                                .toUpperCase()}
-                            </span>
-                          )}
-                        </div>
+                      const personName =
+                        person.full_name?.trim() ||
+                        'Traveler';
 
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-1">
-                            <p className="font-bold text-stone-900 truncate">
-                              {personName}
-                            </p>
+                      const personPhoto =
+                        person.avatar_url ||
+                        person.profile_photo_url ||
+                        '';
 
-                            {person.is_verified === true && (
-                              <span
-                                title="Identity Verified"
-                                className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-emerald-600 text-white shrink-0"
-                              >
-                                <ShieldCheck
-                                  size={13}
-                                  strokeWidth={3}
-                                />
+                      return (
+                        <button
+                          key={person.id}
+                          type="button"
+                          onClick={() =>
+                            openPersonProfile(
+                              person.id
+                            )
+                          }
+                          className="w-full flex items-center gap-4 px-6 py-4 hover:bg-stone-50 transition text-left"
+                        >
+
+                          <div className="w-14 h-14 rounded-full overflow-hidden bg-emerald-100 flex items-center justify-center shrink-0 border border-stone-200">
+
+                            {personPhoto ? (
+                              <img
+                                src={
+                                  personPhoto
+                                }
+                                alt={
+                                  personName
+                                }
+                                className="w-full h-full object-cover"
+                                referrerPolicy="no-referrer"
+                                onError={(
+                                  e
+                                ) => {
+                                  e.currentTarget.style.display =
+                                    'none';
+                                }}
+                              />
+                            ) : (
+                              <span className="text-xl font-bold text-emerald-600">
+                                {personName
+                                  .charAt(
+                                    0
+                                  )
+                                  .toUpperCase()}
                               </span>
                             )}
+
                           </div>
 
-                          {person.bio && (
-                            <p className="text-sm text-stone-500 truncate mt-0.5">
-                              {person.bio}
-                            </p>
-                          )}
+                          <div className="flex-1 min-w-0">
 
-                          <p className="text-xs text-emerald-600 mt-1 font-medium">
-                            View profile →
-                          </p>
-                        </div>
-                      </button>
-                    );
-                  })}
+                            <div className="flex items-center gap-1">
+
+                              <p className="font-bold text-stone-900 truncate">
+                                {personName}
+                              </p>
+
+                              {person.is_verified === true && (
+                                <span
+                                  title="Identity Verified"
+                                  className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-emerald-600 text-white shrink-0"
+                                >
+                                  <ShieldCheck
+                                    size={
+                                      13
+                                    }
+                                    strokeWidth={
+                                      3
+                                    }
+                                  />
+                                </span>
+                              )}
+
+                            </div>
+
+                            {person.bio && (
+                              <p className="text-sm text-stone-500 truncate mt-0.5">
+                                {person.bio}
+                              </p>
+                            )}
+
+                            <p className="text-xs text-emerald-600 mt-1 font-medium">
+                              View profile →
+                            </p>
+
+                          </div>
+
+                        </button>
+                      );
+                    }
+                  )}
+
                 </div>
               )}
+
             </div>
+
           </div>
+
         </div>
       )}
+
     </div>
   );
 }
