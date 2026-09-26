@@ -36,7 +36,7 @@ type DestinationPlan = {
   itinerary: ItineraryDay[];
 };
 
-const destinationPlans: Record<string, DestinationPlan> = {
+export const destinationPlans: Record<string, DestinationPlan> = {
   'Rajasthan, India': {
     name: 'Rajasthan, India',
     route: 'Mumbai → Jaipur → Udaipur → Jaisalmer → Mumbai',
@@ -662,6 +662,8 @@ export default function Plans() {
 
   const [trips, setTrips] = useState<any[]>([]);
   const [joinRequests, setJoinRequests] = useState<any[]>([]);
+  const [acceptedMemberCounts, setAcceptedMemberCounts] =
+    useState<Record<string, number>>({});
   const [requestLoading, setRequestLoading] =
     useState<string | null>(null);
 
@@ -723,12 +725,36 @@ export default function Plans() {
 
       if (!data || data.length === 0) {
         setJoinRequests([]);
+        setAcceptedMemberCounts({});
         return;
       }
 
       const tripIds = data.map(
         (trip) => trip.id
       );
+
+      // Fetch all accepted members for these trips.
+      // The owner is also stored in trip_members as accepted,
+      // so this count already represents the real trip capacity.
+      const {
+        data: acceptedRows,
+        error: acceptedError,
+      } = await supabase
+        .from('trip_members')
+        .select('trip_id, user_id')
+        .in('trip_id', tripIds)
+        .eq('status', 'accepted');
+
+      if (acceptedError) throw acceptedError;
+
+      const counts: Record<string, number> = {};
+
+      (acceptedRows || []).forEach((row) => {
+        counts[row.trip_id] =
+          (counts[row.trip_id] || 0) + 1;
+      });
+
+      setAcceptedMemberCounts(counts);
 
       const {
         data: requests,
@@ -2074,16 +2100,15 @@ export default function Plans() {
                 ) ||
                 buddyLimit + 1;
 
-              /*
-               * Owner is inserted into
-               * trip_members during creation.
-               *
-               * For this screen, display:
-               * 1 / max_members initially.
-               *
-               * We also show CONFIRMED when
-               * trips.status is confirmed.
-               */
+              // Owner is inserted into trip_members as accepted,
+              // therefore acceptedMemberCounts already includes the owner.
+              const currentMembers =
+                acceptedMemberCounts[trip.id] || 0;
+
+              const isConfirmed =
+                trip.status === 'confirmed' ||
+                currentMembers >= maxMembers;
+
               return (
                 <div
                   key={trip.id}
@@ -2117,8 +2142,7 @@ export default function Plans() {
                     </div>
 
                     {/* STATUS */}
-                    {trip.status ===
-                      'confirmed' && (
+                    {isConfirmed && (
                       <div className="mb-3 inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-emerald-100 text-emerald-700 text-sm font-semibold">
                         <Check className="w-4 h-4" />
                         CONFIRMED
@@ -2153,7 +2177,7 @@ export default function Plans() {
 
                         <Users className="w-4 h-4" />
 
-                        Capacity: 1 / {maxMembers}
+                        Capacity: {currentMembers} / {maxMembers}
 
                       </div>
 
@@ -2193,8 +2217,7 @@ export default function Plans() {
 
                       </Link>
 
-                      {trip.status ===
-                        'confirmed' && (
+                      {isConfirmed && (
                         <Link
                           to={`/budget/${trip.id}`}
                           className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-emerald-600 text-white font-medium rounded-md hover:bg-emerald-700"
